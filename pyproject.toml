@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "splat"
+version = "0.1.0"
+description = "Personal repo for splatting"
+authors = ["dcaustin33 <dcaustin33@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = "^2.3.0"
+numpy = "^1.26.4"
+
+
+[tool.poetry.group.dev.dependencies]
+isort = "^5.13.2"
+black = "^24.4.2"
+ipykernel = "^6.29.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 88
