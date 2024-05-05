@@ -9,6 +9,10 @@ readme = "README.md"
 python = "^3.10"
 torch = "^2.3.0"
 numpy = "^1.26.4"
+pycolmap = "^0.6.1"
+pydantic = "^2.7.1"
+matplotlib = "^3.8.4"
+einops = "^0.8.0"
 
 
 [tool.poetry.group.dev.dependencies]

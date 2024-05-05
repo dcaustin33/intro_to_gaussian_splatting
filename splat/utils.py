@@ -3,6 +3,38 @@ import torch
 
 import torch
 
+def get_intrinsic_matrix(f_x: float, f_y: float, c_x: float, c_y: float) -> torch.Tensor:
+    """
+    Get the homogenous intrinsic matrix for the camera
+
+    Args:
+        f_x: focal length in x
+        f_y: focal length in y
+        c_x: principal point in x
+        c_y: principal point in y
+    """
+    return torch.Tensor(
+        [
+            [f_x, 0, c_x, 0],
+            [0, f_y, c_y, 0],
+            [0, 0, 1, 0],
+        ]
+    )
+    
+def get_extrinsic_matrix(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    """
+    Get the homogenous extrinsic matrix for the camera
+
+    Args:
+        R: 3x3 rotation matrix
+        t: 3x1 translation vector
+    """
+    Rt = torch.zeros((4, 4))
+    Rt[:3, :3] = R
+    Rt[:3, 3] = t
+    Rt[3, 3] = 1.0
+    return Rt
+
 
 def project_points(
     projection_matrix: torch.Tensor, points: torch.Tensor
@@ -17,6 +49,10 @@ def project_points(
 
 
 def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    """
+    We should translate the points to camera coordinates, 
+    however we will never use the 4th dimension it seems like so leaving for now
+    """
     Rt = torch.zeros((4, 4))
     Rt[:3, :3] = R.t()
     Rt[:3, 3] = t
@@ -44,6 +80,7 @@ def get_points_and_covariance(
     )
     # results in a 4xN tensor
     points_in_camera_coords = torch.matmul(extrinsic_matrix, points.t()).T  # Nx4
+    print(points.shape)
     # do not need to divide by 1 as this is always 1
     final_points_in_camera_coords = points_in_camera_coords[
         :, :3
@@ -84,6 +121,19 @@ def get_points_and_covariance(
     return projected_points, torch.stack(projected_covariance)
 
 
+def extract_weight(pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor) -> torch.Tensor:
+    """
+    Use the covariance matrix to extract the weight of the point
+
+    Args:
+        mean: 1x2 tensor
+        covariance: 2x2 tensor
+    """
+    diff = pixel - mean
+    inv_covariance = torch.inverse(covariance)
+    return torch.exp(-0.5 * torch.matmul(diff, torch.matmul(inv_covariance, diff.t())))
+
+
 if __name__ == "__main__":
     points = torch.Tensor(
         [
@@ -110,6 +160,7 @@ if __name__ == "__main__":
             [0, 0, 1, 0],
         ]
     )
+    pixel = torch.Tensor([1.5, 3])
 
     projected_points, projected_covariance = get_points_and_covariance(
         points, covariance, extrinsic_matrix, intrinsic_matrix
@@ -118,3 +169,4 @@ if __name__ == "__main__":
     assert np.isclose(
         projected_covariance[0,].numpy(), np.array([[1, 0], [0, 1]])
     ).all()
+    assert extract_weight(pixel, projected_points[0], projected_covariance[0]) == 1.0
