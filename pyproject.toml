@@ -13,6 +13,7 @@ pycolmap = "^0.6.1"
 pydantic = "^2.7.1"
 matplotlib = "^3.8.4"
 einops = "^0.8.0"
+tqdm = "^4.66.4"
 
 
 [tool.poetry.group.dev.dependencies]
