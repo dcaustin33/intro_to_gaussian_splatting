@@ -40,7 +40,7 @@ class GaussianScene(nn.Module):
         )
         # nx3 matrix
         self.scales = torch.tensor(
-            [[1, 1, 1]] * len(points),
+            [[.1, .1, .1]] * len(points),
             dtype=torch.float32,
             requires_grad=True,
             device=self.device,
@@ -114,7 +114,8 @@ class GaussianScene(nn.Module):
             :, :3
         ] / points_in_camera_coords[:, 3].unsqueeze(1)
         # now we project to 2d
-        projected_points, z_component = project_points(
+        z_component = points_in_camera_coords[:, 2].unsqueeze(1)
+        projected_points, _ = project_points(
             intrinsic_matrix, final_points_in_camera_coords
         )
         # now we find the covariance matrices in 2d
@@ -148,8 +149,9 @@ class GaussianScene(nn.Module):
             jacobian[0, 2] = -f_x * camera_coords_x / (camera_coords_z**2)
             jacobian[1, 2] = -f_y * camera_coords_y / (camera_coords_z**2)
             # TODO optimize to do batch mat mul at the end
-            T = torch.matmul(jacobian, W)
-            final_variance = torch.matmul(T, torch.matmul(covariance, T.t()))
+            import pdb; pdb.set_trace()
+            T = torch.matmul(jacobian, W.T)
+            final_variance = torch.matmul(torch.matmul(T, covariance), T.T)
             projected_covariance.append(final_variance[:2, :2])
         return projected_points, z_component, torch.stack(projected_covariance)
     

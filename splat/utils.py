@@ -40,7 +40,10 @@ def get_extrinsic_matrix(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 def project_points(
     projection_matrix: torch.Tensor, points: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Projection matrix is a 3x4 matrix, points is a Nx3 matrix. Returns a Nx2 matrix"""
+    """
+    Projection matrix is the intrinsic matrix a 3x4 matrix, points is a Nx3 matrix. 
+    Returns a Nx2 matrix
+    """
     points = torch.cat(
         [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
     )
