@@ -66,7 +66,7 @@ class GaussianScene(nn.Module):
         all_scale = closest_distances.mean(dim=1)
 
         # Update scales
-        self.scales *= all_scale.unsqueeze(1)
+        self.scales *= torch.log(all_scale.unsqueeze(1))
 
     def get_3d_covariance_matrix(self) -> torch.Tensor:
         """
