@@ -18,9 +18,6 @@ class GaussianScene(nn.Module):
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # nx3 matrix
-        # self.points = torch.tensor(
-        #     points, dtype=torch.float32, requires_grad=True, device=self.device
-        # ).clone()
         self.points = points.clone().requires_grad_(True).to(self.device).float()
         # nx3 matrix
         self.colors = colors.clone().requires_grad_(True).to(self.device).float()
@@ -40,7 +37,8 @@ class GaussianScene(nn.Module):
         )
         # nx3 matrix
         self.scales = torch.ones((points.shape[0], 3), device=self.device)
-        self.initialize_scale()
+        with torch.no_grad():
+            self.initialize_scale()
         # used for opacity and stopping of pixel
         self.opacity_activation = nn.functional.sigmoid
         self.opacity_threshold = 0.99
@@ -54,19 +52,31 @@ class GaussianScene(nn.Module):
         self.percent_dense = 0.01  # not sure what this is really
         
     def initialize_scale(self) -> None:
-        # Compute pairwise distances matrix
-        point_diffs = self.points.unsqueeze(0) - self.points.unsqueeze(1)
-        distances = torch.linalg.norm(point_diffs, dim=2)
+        """Initializes the scale of the covariance from the distance to the three closest points"""
+        all_scale = []
+        for i in range(self.points.shape[0]):
+            point = self.points[i]
+            distances = torch.linalg.norm(self.points - point, dim=1)
+            distances = distances[distances != 0]
+            distances = torch.sort(distances)[0]
+            all_scale.append(distances[:3].mean())
+        self.scales *= torch.tensor(all_scale).unsqueeze(1)
 
-        # Set diagonal to a large number to ignore zero distance to itself
-        distances.fill_diagonal_(float("inf"))
+    # def initialize_scale(self) -> None:
+    #     # Compute pairwise distances matrix
+    #     point_diffs = self.points.unsqueeze(0) - self.points.unsqueeze(1)
+    #     distances = torch.linalg.norm(point_diffs, dim=2)
 
-        # Sort distances and take the mean of the three smallest nonzero distances for each point
-        closest_distances = distances.sort(dim=1).values[:, :3]
-        all_scale = closest_distances.mean(dim=1)
+    #     # Set diagonal to a large number to ignore zero distance to itself
+    #     distances.fill_diagonal_(float("inf"))
 
-        # Update scales
-        self.scales *= all_scale.unsqueeze(1)
+    #     # Sort distances and take the mean of the three smallest nonzero distances for each point
+    #     closest_distances = distances.sort(dim=1).values[:, :3]
+    #     all_scale = closest_distances.mean(dim=1)
+
+    #     # Update scales
+    #     self.scales *= all_scale.unsqueeze(1)
+
 
     def get_3d_covariance_matrix(self) -> torch.Tensor:
         """
@@ -109,7 +119,11 @@ class GaussianScene(nn.Module):
             intrinsic_matrix: 3x4 tensor that projects the points to 2d
         """
         points = torch.cat(
-            [self.points, torch.ones(self.points.shape[0], 1, device=self.points.device)], dim=1
+            [
+                self.points,
+                torch.ones(self.points.shape[0], 1, device=self.points.device),
+            ],
+            dim=1,
         )
         # results in a 4xN tensor
         points_in_camera_coords = torch.matmul(extrinsic_matrix, points.t()).T  # Nx4
@@ -119,7 +133,7 @@ class GaussianScene(nn.Module):
         ] / points_in_camera_coords[:, 3].unsqueeze(1)
         # now we project to 2d
 
-        z_component = final_points_in_camera_coords[:, 2].unsqueeze(1)
+        z_component = points_in_camera_coords[:, 2].unsqueeze(1)
         projected_points, _ = project_points(
             intrinsic_matrix, final_points_in_camera_coords
         )
@@ -155,17 +169,17 @@ class GaussianScene(nn.Module):
             jacobian[1, 2] = -f_y * camera_coords_y / (camera_coords_z**2)
             # import pdb; pdb.set_trace()
             # TODO optimize to do batch mat mul at the end
-            T = torch.matmul(jacobian, W)
+            T = torch.matmul(jacobian, W.T)
             final_variance = torch.matmul(torch.matmul(T, covariance), T.T)
             projected_covariance.append(final_variance[:2, :2])
         return projected_points, z_component, torch.stack(projected_covariance)
-    
+
     def covariance_3d_to_2d(
         self,
         points_in_camera_coords: torch.Tensor,
-        covariance_3d: torch.Tensor, 
-        extrinsic_matrix: torch.Tensor, 
-        intrinsic_matrix: torch.Tensor
+        covariance_3d: torch.Tensor,
+        extrinsic_matrix: torch.Tensor,
+        intrinsic_matrix: torch.Tensor,
     ) -> torch.Tensor:
         """
         Given a set of points that we have projected to 2d we now find the 2d covariance matrices
@@ -177,11 +191,14 @@ class GaussianScene(nn.Module):
             intrinsic_matrix: 3x4 tensor that projects the points to 2d
         """
         points = torch.cat(
-            [self.points, torch.ones(self.points.shape[0], 1, device=self.points.device)], dim=1
+            [
+                self.points,
+                torch.ones(self.points.shape[0], 1, device=self.points.device),
+            ],
+            dim=1,
         )
-        # results in a Nx4 tensor
+        # results in a 4xN tensor
         points_in_camera_coords = torch.matmul(extrinsic_matrix, points.t()).T
-        # this is a n x 4 tensor
 
     def get_intersected_tiles(
         self,
@@ -192,8 +209,7 @@ class GaussianScene(nn.Module):
         tile_size: int = 16,
     ):
         """Returns the intersected tiles for each point. Can be optimized later"""
-        eigenvalues = torch.linalg.eigvals(projected_covariance).real / 1000
-        # eigenvalues = torch.ones((projected_points.shape[0], 2)) * 100
+        eigenvalues = torch.linalg.eigvals(projected_covariance).real
         # get the radius
         radii = torch.sqrt(eigenvalues[:, 0])
         min_y = projected_points[:, 1] - radii
@@ -206,7 +222,7 @@ class GaussianScene(nn.Module):
             (n, width // 16, height // 16), device=projected_points.device
         )
 
-        # TODO: this could be optimized with cuda
+        # TODO: this could be optimized
         for idx in range(n):
             for x in range(int(min_x[idx].item()), int(max_x[idx].item()), tile_size):
                 for y in range(int(min_y[idx].item()), int(max_y[idx].item()), tile_size):
@@ -219,6 +235,51 @@ class GaussianScene(nn.Module):
                     tile_matrix[idx, x // tile_size, y // tile_size] = 1
 
         return tile_matrix
+
+    # def get_intersected_tiles(
+    #     self,
+    #     projected_points: torch.Tensor,
+    #     projected_covariance: torch.Tensor,
+    #     height: int,
+    #     width: int,
+    #     tile_size: int = 16,
+    # ):
+    #     """Returns the intersected tiles for each point. Can be optimized later"""
+    #     eigenvalues = torch.linalg.eigvals(projected_covariance).real
+    #     # get the radius
+    #     radii = torch.sqrt(eigenvalues[:, 0])
+    #     min_y = (projected_points[:, 1] - radii) / tile_size
+    #     max_y = (projected_points[:, 1] + radii) / tile_size
+    #     min_x = (projected_points[:, 0] - radii) / tile_size
+    #     max_x = (projected_points[:, 0] + radii) / tile_size
+
+    #     # remove points that are outside the image
+    #     x_never_in_image = (max_x < 0) | (min_x > width)
+    #     y_never_in_image = (max_y < 0) | (min_y > height)
+    #     never_in_image = x_never_in_image | y_never_in_image
+    #     # remove those points
+    #     min_x = min_x[~never_in_image]
+    #     max_x = max_x[~never_in_image]
+    #     min_y = min_y[~never_in_image]
+    #     max_y = max_y[~never_in_image]
+    #     projected_points = projected_points[~never_in_image]
+    #     projected_covariance = projected_covariance[~never_in_image]
+    #     import pdb; pdb.set_trace()
+
+    #     # have indicators for the points that are in the image
+    #     n = projected_points.shape[0]
+    #     tile_matrix = torch.zeros(
+    #         (n, width // 16, height // 16), device=projected_points.device
+    #     )
+
+    #     for idx in range(min_x.shape[0]):
+    #         x_min = int(min_x[idx].item())
+    #         x_max = int(max_x[idx].item())
+    #         y_min = int(min_y[idx].item())
+    #         y_max = int(max_y[idx].item())
+    #         tile_matrix[idx, x_min:x_max, y_min:y_max] = 1
+
+    #     return tile_matrix, never_in_image
 
     def render_pixel(
         self,
@@ -238,7 +299,7 @@ class GaussianScene(nn.Module):
             weight = opacity[point_idx] * extract_gaussian_weight(
                 pixel, mean, point_covariance
             )
-            weight = torch.Tensor([.99])
+            weight = min(weight, torch.Tensor([0.99]))
             current_pixel_weight += weight
             if current_pixel_weight > self.opacity_threshold:
                 break
@@ -253,16 +314,18 @@ class GaussianScene(nn.Module):
         points: torch.Tensor,
         covariance: torch.Tensor,
         z_component: torch.Tensor,
+        colors: torch.Tensor,
+        opacity: torch.Tensor,
         tile_size: int = 16,
     ):
         upper_left_pixel = torch.Tensor([x * tile_size, y * tile_size])
         in_tile_truth = tile_matrix[:, x, y] == 1
         points_in_tile = points[in_tile_truth]
         covariance_in_tile = covariance[in_tile_truth]
-        colors_in_tile = self.colors[in_tile_truth]
+        colors_in_tile = colors[in_tile_truth]
         z_component_in_tile = z_component[in_tile_truth]
-        opacity_in_tile = self.opacity_activation(self.opacity[in_tile_truth])
-        
+        opacity_in_tile = self.opacity_activation(opacity[in_tile_truth])
+
         # sort by the z component
         sorted_indices = torch.argsort(z_component_in_tile)
         points_in_tile = points_in_tile[sorted_indices]
@@ -294,15 +357,24 @@ class GaussianScene(nn.Module):
         tile_size: int = 16,
     ) -> torch.Tensor:
         """Renders the scene given the projected points and covariance matrices"""
-        tile_matrix = self.get_intersected_tiles(
-            projected_points=projected_points,
-            projected_covariance=projected_covariances,
-            height=height,
-            width=width,
-            tile_size=tile_size,
+        tile_matrix = (
+            self.get_intersected_tiles(
+                projected_points=projected_points,
+                projected_covariance=projected_covariances,
+                height=height,
+                width=width,
+                tile_size=tile_size,
+            )
         )
-        scene = torch.zeros((width + tile_size, height + tile_size, 3), device=projected_points.device)
-        print(scene.shape, width // tile_size, height // tile_size)
+
+        scene = torch.zeros(
+            (width + tile_size, height + tile_size, 3), device=projected_points.device
+        )
+        print(
+            scene.shape,
+            width // tile_size,
+            height // tile_size,
+        )
         for x in tqdm(range(width // tile_size)):
             for y in range(height // tile_size):
                 scene[
@@ -315,6 +387,8 @@ class GaussianScene(nn.Module):
                     points=projected_points,
                     covariance=projected_covariances,
                     z_component=z_component,
+                    colors=self.colors,
+                    opacity=self.opacity,
                     tile_size=tile_size,
                 )
         return scene
