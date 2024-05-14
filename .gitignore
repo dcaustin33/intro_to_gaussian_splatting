@@ -1,1 +1,4 @@
 *.venv
+# the folder titled original_gaussian_splat
+*/original_gaussian_splat
+*/point_clouds

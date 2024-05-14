@@ -1304,6 +1304,20 @@ test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=7.4.3)", "pytest-
 type = ["mypy (>=1.8)"]
 
 [[package]]
+name = "plyfile"
+version = "1.0.3"
+description = "PLY file reader/writer"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "plyfile-1.0.3-py3-none-any.whl", hash = "sha256:66255dca882553f1fcd0c01fd8444bb4c6cf3965c7659106bf7c6c1ac6793a08"},
+    {file = "plyfile-1.0.3.tar.gz", hash = "sha256:0ecbe8e7ce55a7bbc6c9dea24242fffa0ab7d9bed33fbd5ad567ca013bcc5222"},
+]
+
+[package.dependencies]
+numpy = ">=1.17"
+
+[[package]]
 name = "prompt-toolkit"
 version = "3.0.43"
 description = "Library for building powerful interactive command lines in Python"
@@ -1909,4 +1923,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "a9d933851da564f176eb26f91a36344e1c3c0457816469154fac11b838776a03"
+content-hash = "b93bfffa5c85c18a8c3e292e35dfaec25f4208296d878377b5fbc670001913c1"
