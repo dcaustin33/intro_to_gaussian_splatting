@@ -51,23 +51,6 @@ def get_extrinsic_matrix(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     return Rt
 
 
-def project_points(
-    projection_matrix: torch.Tensor, points: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Projection matrix is the intrinsic matrix a 3x4 matrix, points is a Nx3 matrix.
-    Returns a Nx2 matrix
-    """
-    points = torch.cat(
-        [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
-    )
-    projected_points = torch.matmul(projection_matrix, points.t()).t()
-    z_component = projected_points[:, 2].unsqueeze(1)
-    projected_points = projected_points[:, :2] / projected_points[:, 2].unsqueeze(1)
-
-    return projected_points, z_component
-
-
 def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     """
     We should translate the points to camera coordinates,
@@ -161,7 +144,7 @@ def build_rotation(r: torch.Tensor) -> torch.Tensor:
 
 
 def focal2fov(focal: torch.Tensor, pixels: torch.Tensor) -> torch.Tensor:
-    return 2 * math.atan(pixels / (2 * focal))
+    return torch.Tensor([2 * math.atan(pixels / (2 * focal))])
 
 
 def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
@@ -172,7 +155,8 @@ def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     Rt[3, 3] = 1.0
     return Rt.float()
 
-def getWorld2View2(R, t, translate=torch.tensor([.0, .0, .0]), scale=1.0):
+
+def getWorld2View2(R, t, translate=torch.tensor([0.0, 0.0, 0.0]), scale=1.0):
     Rt = torch.zeros((4, 4))
     Rt[:3, :3] = R.t()  # Use .t() for transpose in PyTorch
     Rt[:3, 3] = t
@@ -183,7 +167,7 @@ def getWorld2View2(R, t, translate=torch.tensor([.0, .0, .0]), scale=1.0):
     cam_center = (cam_center + translate) * scale
     C2W[:3, 3] = cam_center
     Rt = torch.inverse(C2W)
-    return Rt.float()  
+    return Rt.float()
 
 
 def getProjectionMatrix(
@@ -242,22 +226,72 @@ def read_image_file(colmap_path: str) -> Dict:
 
 
 def in_view_frustum(
-    points: torch.Tensor, minimum_z: float, view_matrix: torch.Tensor
+    points: torch.Tensor, view_matrix: torch.Tensor, minimum_z: float = 0.2
 ) -> torch.Tensor:
     """
     Given a view matrix (transforming from world to camera coords) and a minimum
     z value, return a boolean tensor indicating whether the points aree in view.
 
-    points is a Nx3 tensor and we return a N tensor indicating whether the point 
+    points is a Nx3 tensor and we return a N tensor indicating whether the point
     is in view.
+
+    minimum_z is the minimum z set in the authors code
     """
-    projected_points = torch.matmul(view_matrix, points.t()).t()
+    homogeneous = torch.ones((points.shape[0], 4))
+    homogeneous[:, :3] = points
+    projected_points = homogeneous @ view_matrix
     z_component = projected_points[:, 2]
-    return z_component > minimum_z
+    truth = z_component >= minimum_z
+    return truth
+
 
 def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
     """
     Convert points from NDC to pixel coordinates
     """
-    return (points + 1) * (dimension - 1) * 0.5 
+    return (points + 1) * (dimension - 1) * 0.5
 
+
+def compute_2d_covariance(
+    points: torch.Tensor,
+    W: torch.Tensor,
+    covariance_3d: torch.Tensor,
+    tan_fovY: torch.Tensor,
+    tan_fovX: torch.Tensor,
+    focal_x: torch.Tensor,
+    focal_y: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute the 2D covariance matrix for each gaussian
+    
+    W is in the uW format so transpose for final calc
+    """
+    points = torch.cat([points, torch.ones(points.shape[0], 1, device=points.device)], dim=1)
+    points_transformed = (points @ W)[:, :3]
+    limx = 1.3 * tan_fovX
+    limy = 1.3 * tan_fovY
+    x = points_transformed[:, 0] / points_transformed[:, 2]
+    y = points_transformed[:, 1] / points_transformed[:, 2]
+    z = points_transformed[:, 2]
+    x = torch.clamp(x, -limx, limx) * z
+    y = torch.clamp(y, -limy, limy) * z
+    
+    J = torch.zeros((points_transformed.shape[0], 3, 3))
+    J[:, 0, 0] = focal_x / z
+    J[:, 0, 2] = -(focal_x * x) / (z ** 2)
+    J[:, 1, 1] = focal_y / z
+    J[:, 1, 2] = -(focal_y * y) / (z ** 2)
+    
+    W = W[:3, :3].T
+
+    return (J @ W @ covariance_3d @ W.T @ J.transpose(1, 2))[:, :2, :2]
+
+def compute_gaussian_weight(
+    pixel_coord: torch.Tensor, # (1, 2) tensor
+    point_mean: torch.Tensor,
+    inverse_covariance: torch.Tensor,
+) -> torch.Tensor:
+    difference = point_mean - pixel_coord
+    power = -0.5 * difference @ inverse_covariance @ difference.T
+    return torch.exp(power).item()
+    

@@ -10,7 +10,6 @@ from splat.utils import (
     extract_gaussian_weight,
     getWorld2View,
     inverse_sigmoid,
-    project_points,
 )
 
 

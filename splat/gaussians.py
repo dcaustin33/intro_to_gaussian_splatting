@@ -13,7 +13,6 @@ from splat.utils import (
     fetchPly,
     getWorld2View,
     inverse_sigmoid,
-    project_points,
     storePly,
 )
 
@@ -36,11 +35,14 @@ class Gaussians(nn.Module):
             (colors / 256).clone().requires_grad_(True).to(self.device).float()
         )
         self.scales = torch.ones((len(self.points), 3)).to(self.device).float()
-        self.initialize_scale()
+        # self.initialize_scale()
 
         print("initialized_points")
         self.quaternions = torch.zeros((len(self.points), 4))
         self.quaternions[:, 0] = 1.0
+        self.opacity = inverse_sigmoid(
+            1 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
+        )
 
     def initialize_scale(
         self,
