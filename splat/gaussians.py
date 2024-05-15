@@ -34,7 +34,7 @@ class Gaussians(nn.Module):
         self.colors = (
             (colors / 256).clone().requires_grad_(True).to(self.device).float()
         )
-        self.scales = torch.ones((len(self.points), 3)).to(self.device).float()
+        self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * .01
         # self.initialize_scale()
 
         print("initialized_points")

@@ -17,8 +17,8 @@ class PreprocessedScene(NamedTuple):
     inverse_covariance_2d: torch.Tensor
     radius: torch.Tensor
     points_xy: torch.Tensor
-    min_x_tiles: torch.Tensor
-    min_y_tiles: torch.Tensor
-    max_x_tiles: torch.Tensor
-    max_y_tiles: torch.Tensor
+    min_x: torch.Tensor
+    min_y: torch.Tensor
+    max_x: torch.Tensor
+    max_y: torch.Tensor
     opacity: torch.Tensor

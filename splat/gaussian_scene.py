@@ -1,22 +1,23 @@
+import math
 import os
 from typing import Dict, Tuple
 
 import pycolmap
 import torch
 from torch import nn
-import math
+from tqdm import tqdm
 
 from splat.gaussians import Gaussians
 from splat.image import GaussianImage
+from splat.schema import PreprocessedScene
 from splat.utils import (
-    read_camera_file,
-    read_image_file,
     compute_2d_covariance,
+    compute_gaussian_weight,
     in_view_frustum,
     ndc2Pix,
-    compute_gaussian_weight,
+    read_camera_file,
+    read_image_file,
 )
-from splat.schema import PreprocessedScene
 
 
 class GaussianScene(nn.Module):
@@ -122,10 +123,10 @@ class GaussianScene(nn.Module):
         radius = self.compute_radius(covariance_2d, determinant)
 
 
-        min_x_tiles = torch.floor(points_xy[:, 0] - radius) / tile_size
-        min_y_tiles = torch.floor(points_xy[:, 1] - radius) / tile_size
-        max_x_tiles = torch.ceil(points_xy[:, 0] + radius) / tile_size
-        max_y_tiles = torch.ceil(points_xy[:, 1] + radius) / tile_size
+        min_x = torch.floor(points_xy[:, 0] - radius)
+        min_y = torch.floor(points_xy[:, 1] - radius)
+        max_x = torch.ceil(points_xy[:, 0] + radius)
+        max_y = torch.ceil(points_xy[:, 1] + radius)
 
         # sort by depth
         colors = self.gaussians.colors[in_view]
@@ -140,10 +141,10 @@ class GaussianScene(nn.Module):
         inverse_covariance = inverse_covariance[indices_by_depth]
         radius = radius[indices_by_depth]
         points_xy = points_xy[indices_by_depth]
-        min_x_tiles = min_x_tiles[indices_by_depth]
-        min_y_tiles = min_y_tiles[indices_by_depth]
-        max_x_tiles = max_x_tiles[indices_by_depth]
-        max_y_tiles = max_y_tiles[indices_by_depth]
+        min_x = min_x[indices_by_depth]
+        min_y = min_y[indices_by_depth]
+        max_x = max_x[indices_by_depth]
+        max_y = max_y[indices_by_depth]
 
         return PreprocessedScene(
             points=points,
@@ -153,10 +154,10 @@ class GaussianScene(nn.Module):
             inverse_covariance_2d=inverse_covariance,
             radius=radius,
             points_xy=points_xy,
-            min_x_tiles=min_x_tiles,
-            min_y_tiles=min_y_tiles,
-            max_x_tiles=max_x_tiles,
-            max_y_tiles=max_y_tiles,
+            min_x=min_x,
+            min_y=min_y,
+            max_x=max_x,
+            max_y=max_y,
             opacity=opacity,
         )
 
@@ -176,15 +177,13 @@ class GaussianScene(nn.Module):
             weight = compute_gaussian_weight(
                 pixel_coord=pixel_coords,
                 point_mean=point,
-                inverse_covariance=inverse_covariance,
+                inverse_covariance=inverse_covariance[point_idx],
             )
             alpha = weight * torch.sigmoid(opacities[point_idx])
             test_weight = total_weight * (1-alpha)
-            import pdb; pdb.set_trace()
             if test_weight < min_weight:
                 return pixel_color
-            import pdb; pdb.set_trace()
-            pixel_color += (1 - total_weight) * weight * colors[point_idx]
+            pixel_color += total_weight * alpha * colors[point_idx]
             total_weight = test_weight
         # in case we never reach saturation
         return pixel_color
@@ -220,20 +219,21 @@ class GaussianScene(nn.Module):
         height = self.images[image_idx].height
         width = self.images[image_idx].width
 
-        height = 512
-        width = 2048
+        height = 3200
+        width = 4096
 
         image = torch.zeros((width, height, 3))
 
-        for x_min in range(0, width, tile_size):
+        for x_min in tqdm(range(2000, width, tile_size)):
+            x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (preprocessed_scene.max_x >= x_min)
+            print("x_in_tile", x_in_tile.sum())
+            if x_in_tile.sum() == 0:
+                continue
             for y_min in range(0, height, tile_size):
-                x_in_tile = (preprocessed_scene.points[:, 0] >= x_min) & (
-                    preprocessed_scene.points[:, 0] < x_min + tile_size
-                )
-                y_in_tile = (preprocessed_scene.points[:, 1] >= y_min) & (
-                    preprocessed_scene.points[:, 1] < y_min + tile_size
-                )
+                y_in_tile = (preprocessed_scene.min_y <= y_min + tile_size) & (preprocessed_scene.max_y >= y_min)
                 points_in_tile = x_in_tile & y_in_tile
+                if points_in_tile.sum() == 0:
+                    continue
                 points_in_tile_mean = preprocessed_scene.points[points_in_tile]
                 colors_in_tile = preprocessed_scene.colors[points_in_tile]
                 opacities_in_tile = preprocessed_scene.opacity[points_in_tile]

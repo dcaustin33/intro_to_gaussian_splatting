@@ -291,7 +291,7 @@ def compute_gaussian_weight(
     point_mean: torch.Tensor,
     inverse_covariance: torch.Tensor,
 ) -> torch.Tensor:
+
     difference = point_mean - pixel_coord
     power = -0.5 * difference @ inverse_covariance @ difference.T
     return torch.exp(power).item()
-    
