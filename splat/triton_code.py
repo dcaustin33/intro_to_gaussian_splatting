@@ -21,13 +21,12 @@ def compute_gaussian_weight(
     inverse_covariance,
     point_weight,
     num_points: tl.constexpr,
-    zero: tl.constexpr
 ) -> None:
     pid_0 = tl.program_id(0)
     pid_1 = tl.program_id(1)
     
     # each block is loading all the points in view
-    points_in_view_offsets = tl.arange(0, num_points * 2)
+    points_in_view_offsets = tl.arange(0, num_points)
     real_points_in_view = tl.load(points_in_view + points_in_view_offsets) > 0
     
     inverse_covariance_x = tl.load(inverse_covariance + points_in_view_offsets * 4 + 0, mask=real_points_in_view)
@@ -68,7 +67,6 @@ def add_kernel(
     # multiple of the block size.
     x = tl.load(x_ptr + offsets, mask=mask)
     y = tl.load(y_ptr + offsets, mask=mask)
-    import pdb; pdb.set_trace()
     output = x + y
     # Write x + y back to DRAM.
     tl.store(output_ptr + offsets, output, mask=mask)
@@ -80,15 +78,14 @@ if __name__=="__main__":
     
     num_points = 4
     point_means = torch.Tensor([[0, 0], [1, 1], [2, 2], [3, 3]]).to(device)
-    points_in_view = torch.Tensor([0, 1, 0, 0]).to(device)
+    points_in_view = torch.Tensor([1, 1, 1, 1]).to(device)
     # convert to torch.int32
     points_in_view = points_in_view.to(torch.int32)
-    inverse_covariance = torch.rand_like(torch.zeros(num_points, 2, 2, device=device))
+    inverse_covariance = torch.Tensor([[[1, 0], [0, 1]], [[1, 0], [0, 1]], [[1, 0], [0, 1]], [[1, 0], [0, 1]]]).to(device).contiguous()
     
     point_weight = torch.zeros(num_points, 1, device=device)
     
-    compute_gaussian_weight[1,](point_means, points_in_view, inverse_covariance, point_weight, num_points, 0)
-    import pdb; pdb.set_trace()
+    compute_gaussian_weight[1,](point_means, points_in_view, inverse_covariance, point_weight, num_points)
     
     # n_elements = 10
     # x = torch.Tensor([0, 1, 2, 3])
