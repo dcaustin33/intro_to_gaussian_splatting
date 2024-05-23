@@ -22,4 +22,4 @@ class PreprocessedScene(NamedTuple):
     min_y: torch.Tensor
     max_x: torch.Tensor
     max_y: torch.Tensor
-    opacity: torch.Tensor
+    sigmoid_opacity: torch.Tensor

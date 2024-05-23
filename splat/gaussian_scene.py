@@ -1,11 +1,13 @@
 import math
 import os
 import time
+from pathlib import Path
 from typing import Dict, Tuple
 
 import pycolmap
 import torch
 from torch import nn
+from torch.utils.cpp_extension import load_inline
 from tqdm import tqdm
 
 from splat.gaussians import Gaussians
@@ -18,6 +20,7 @@ from splat.utils import (
     ndc2Pix,
     read_camera_file,
     read_image_file,
+    load_cuda
 )
 
 
@@ -155,7 +158,7 @@ class GaussianScene(nn.Module):
             min_y=min_y,
             max_x=max_x,
             max_y=max_y,
-            opacity=opacity,
+            sigmoid_opacity=torch.sigmoid(opacity),
         )
 
     def render_pixel(
@@ -237,7 +240,7 @@ class GaussianScene(nn.Module):
                     continue
                 points_in_tile_mean = preprocessed_scene.points[points_in_tile]
                 colors_in_tile = preprocessed_scene.colors[points_in_tile]
-                opacities_in_tile = preprocessed_scene.opacity[points_in_tile]
+                opacities_in_tile = preprocessed_scene.sigmoid_opacity[points_in_tile]
                 inverse_covariance_in_tile = preprocessed_scene.inverse_covariance_2d[
                     points_in_tile
                 ]
@@ -257,12 +260,9 @@ class GaussianScene(nn.Module):
     def compile_c_ext(
         self,
     ) -> torch.jit.ScriptModule:
-        from pathlib import Path
-
-        from torch.utils.cpp_extension import load_inline
 
         cpp_source = Path(
-            "/Users/derek/Desktop/personal_gaussian_splatting/splat/c/loop2.c"
+            "/Users/derek/Desktop/personal_gaussian_splatting/splat/c/loop.c"
         ).read_text()
 
         # Load the CUDA kernel as a PyTorch extension
@@ -276,51 +276,6 @@ class GaussianScene(nn.Module):
             # build_directory='./cuda_build',
         )
         return copy_extension
-
-    def render_image_c(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
-        """For each tile have to check if the point is in the tile"""
-        preprocessed_scene = self.preprocess(image_idx)
-        height = self.images[image_idx].height
-        width = self.images[image_idx].width
-
-        height = 3200
-        width = 3200
-
-        image = torch.zeros((width, height, 3))
-        ext = self.compile_c_ext()
-
-        for x_min in tqdm(range(2000, width, tile_size)):
-            x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
-                preprocessed_scene.max_x >= x_min
-            )
-            print("x_in_tile", x_in_tile.sum())
-            if x_in_tile.sum() == 0:
-                continue
-            for y_min in range(0, height, tile_size):
-                y_in_tile = (preprocessed_scene.min_y <= y_min + tile_size) & (
-                    preprocessed_scene.max_y >= y_min
-                )
-                points_in_tile = x_in_tile & y_in_tile
-                if points_in_tile.sum() == 0:
-                    continue
-                points_in_tile_mean = preprocessed_scene.points[points_in_tile]
-                colors_in_tile = preprocessed_scene.colors[points_in_tile]
-                opacities_in_tile = preprocessed_scene.opacity[points_in_tile]
-                inverse_covariance_in_tile = preprocessed_scene.inverse_covariance_2d[
-                    points_in_tile
-                ]
-                image[
-                    x_min : x_min + tile_size, y_min : y_min + tile_size
-                ] = ext.render_tile(
-                    x_min,
-                    y_min,
-                    points_in_tile_mean,
-                    colors_in_tile,
-                    opacities_in_tile,
-                    inverse_covariance_in_tile,
-                    tile_size,
-                )
-        return image
 
     def render_image_c_again(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
         preprocessed_scene = self.preprocess(image_idx)
@@ -341,9 +296,60 @@ class GaussianScene(nn.Module):
             preprocessed_scene.max_y,
             preprocessed_scene.points,
             preprocessed_scene.colors,
-            preprocessed_scene.opacity,
+            preprocessed_scene.sigmoid_opacity,
             preprocessed_scene.inverse_covariance_2d,
         )
         print("operation took ", time.time() - now)
         print("Operation took seconds: ", time.time() - now)
         return image
+    
+    def compile_cuda_ext(
+        self,
+    ) -> torch.jit.ScriptModule:
+        
+        cpp_src = """torch::Tensor render_image(
+    int image_height,
+    int image_width,
+    int tile_size,
+    torch::Tensor point_means,
+    torch::Tensor point_colors,
+    torch::Tensor inverse_covariance_2d,
+    torch::Tensor min_x,
+    torch::Tensor max_x,
+    torch::Tensor min_y,
+    torch::Tensor max_y,
+    torch::Tensor opacity)"""
+
+        cuda_src = Path(
+            "/Users/derek/Desktop/personal_gaussian_splatting/splat/c/render.cu"
+        ).read_text()
+
+        return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
+    
+    
+    def render_image_cuda(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
+        preprocessed_scene = self.preprocess(image_idx)
+        height = self.images[image_idx].height
+        width = self.images[image_idx].width
+
+        height = 3200
+        width = 3200
+
+        image = torch.zeros((width, height, 3))
+        ext = self.compile_cuda_ext()
+
+        now = time.time()
+        image = ext.render_image(
+            preprocessed_scene.min_x.contiguous(),
+            preprocessed_scene.max_x.contiguous(),
+            preprocessed_scene.min_y.contiguous(),
+            preprocessed_scene.max_y.contiguous(),
+            preprocessed_scene.points.contiguous(),
+            preprocessed_scene.colors.contiguous(),
+            preprocessed_scene.sigmoid_opacity.contiguous(),
+            preprocessed_scene.inverse_covariance_2d.contiguous(),
+        )
+        print("operation took ", time.time() - now)
+        print("Operation took seconds: ", time.time() - now)
+        return image
+        

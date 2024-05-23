@@ -63,7 +63,7 @@ torch::Tensor render_pixel(
         auto point = points_mean[i];
         auto diff = point - pixel_coords;
         auto weight = torch::exp(-0.5 * diff.matmul(inverse_covariance[i]).matmul(diff.t()));
-        auto alpha = weight * torch::sigmoid(opacities[i]);
+        auto alpha = weight *opacities[i];
         auto test_weight = total_weight * (1 - alpha);
 
         if (test_weight.item<float>() < 0.0001)

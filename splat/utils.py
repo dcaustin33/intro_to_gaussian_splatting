@@ -13,6 +13,7 @@ from splat.read_colmap import (
     read_images_text,
 )
 from splat.schema import BasicPointCloud
+from torch.utils.cpp_extension import load_inline
 
 
 def get_intrinsic_matrix(
@@ -298,3 +299,14 @@ def compute_gaussian_weight(
     difference = point_mean - pixel_coord
     power = -0.5 * difference @ inverse_covariance @ difference.T
     return torch.exp(power).item()
+
+
+def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=False):
+    return load_inline(
+        cuda_sources=[cuda_src],
+        cpp_sources=[cpp_src],
+        functions=funcs,
+        extra_cuda_cflags=["-O2"] if opt else [],
+        verbose=verbose,
+        name="inline_ext",
+    )
