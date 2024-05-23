@@ -82,6 +82,7 @@ __global__ void render_tile(
     image[(pixel_y * image_width + pixel_x) * 3] = color.x;
     image[(pixel_y * image_width + pixel_x) * 3 + 1] = color.y;
     image[(pixel_y * image_width + pixel_x) * 3 + 2] = color.z;
+
 }
 
 
