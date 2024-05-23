@@ -1,1 +1,11 @@
 *.venv
+# the folder titled original_gaussian_splat
+*/original_gaussian_splat
+point_clouds
+360_extra_scenes
+*.python-version
+*/__pycache__
+*.ply
+*.zip
+flowers
+treehill

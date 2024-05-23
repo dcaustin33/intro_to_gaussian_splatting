@@ -7,13 +7,17 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-torch = "^2.3.0"
+torch = "2.2.2"
 numpy = "^1.26.4"
 pycolmap = "^0.6.1"
 pydantic = "^2.7.1"
 matplotlib = "^3.8.4"
 einops = "^0.8.0"
 tqdm = "^4.66.4"
+plyfile = "^1.0.3"
+scikit-learn = "^1.4.2"
+pyyaml = "^6.0.1"
+triton = "2.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
