@@ -35,12 +35,27 @@ def compute_gaussian_weight(
     points_x = tl.load(point_means + points_in_view_offsets * 2, mask=real_points_in_view)
     points_y = tl.load(point_means + points_in_view_offsets * 2 + 1, mask=real_points_in_view)
     
-    difference_x = points_x - 0.0
-    difference_y = points_y - 0.0
+    difference_x = points_x - pid_0
+    difference_y = points_y - pid_1
     difference_first = difference_x * inverse_covariance_x + difference_y * inverse_covariance_xy
     difference_second = difference_x * inverse_covariance_xy + difference_y * inverse_covariance_y
     final = difference_first * difference_x + difference_second * difference_y
     tl.store(point_weight + points_in_view_offsets, final, mask=real_points_in_view)
+    
+    
+@triton.jit
+def render_tile(
+    points,
+    points_in_view,
+    inverse_covariance,
+    point_weight,
+    block_size: tl.constexpr,
+) -> None:
+    """
+    Triton kernel that renders a full image tile.
+    Takes in all the points, only loads those that are in view.
+    Points are in sorted order so 
+    """
     
     
 @triton.jit
@@ -52,6 +67,7 @@ def add_kernel(
     BLOCK_SIZE: tl.constexpr,  # Number of elements each program should process.
                  # NOTE: `constexpr` so it can be used as a shape value.
 ):
+    """Test function that adds two vectors in memory."""
     # There are multiple 'programs' processing different data. We identify which program
     # we are here:
     pid = tl.program_id(axis=0)  # We use a 1D launch grid so axis is 0.
