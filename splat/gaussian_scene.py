@@ -308,17 +308,17 @@ class GaussianScene(nn.Module):
     ) -> torch.jit.ScriptModule:
         
         cpp_src = """torch::Tensor render_image(
-    int image_height,
-    int image_width,
-    int tile_size,
-    torch::Tensor point_means,
-    torch::Tensor point_colors,
-    torch::Tensor inverse_covariance_2d,
-    torch::Tensor min_x,
-    torch::Tensor max_x,
-    torch::Tensor min_y,
-    torch::Tensor max_y,
-    torch::Tensor opacity)"""
+int image_height,
+int image_width,
+int tile_size,
+torch::Tensor point_means,
+torch::Tensor point_colors,
+torch::Tensor inverse_covariance_2d,
+torch::Tensor min_x,
+torch::Tensor max_x,
+torch::Tensor min_y,
+torch::Tensor max_y,
+torch::Tensor opacity)"""
 
         cuda_src = Path(
             "/teamspace/studios/this_studio/personal_gaussian_splatting/splat/c/render.cu"
