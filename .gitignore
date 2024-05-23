@@ -3,6 +3,7 @@
 */original_gaussian_splat
 point_clouds
 360_extra_scenes
+360_extra_scenes.zip
 *.python-version
 */__pycache__
 *.ply

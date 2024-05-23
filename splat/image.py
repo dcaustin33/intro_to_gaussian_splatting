@@ -5,19 +5,18 @@ import torch
 from splat.read_colmap import Camera, Image
 from splat.utils import (
     build_rotation,
+    focal2fov,
     get_extrinsic_matrix,
     get_intrinsic_matrix,
     getProjectionMatrix,
     getWorld2View,
     getWorld2View2,
-    focal2fov,
     in_view_frustum,
-    ndc2Pix
+    ndc2Pix,
 )
 
 
 class GaussianImage(torch.nn.Module):
-
     def __init__(self, camera: Camera, image: Image) -> None:
         super().__init__()
 
@@ -37,9 +36,9 @@ class GaussianImage(torch.nn.Module):
         self.intrinsic_matrix = get_intrinsic_matrix(
             f_x=self.f_x, f_y=self.f_y, c_x=self.c_x, c_y=self.c_y
         )
-        
+
         self.zfar = torch.Tensor([100.0])
-        self.znear = torch.Tensor([.001])
+        self.znear = torch.Tensor([0.001])
         self.name = image.name
 
         # this is stolen from the original repo - not sure why the transpose here
@@ -67,8 +66,8 @@ class GaussianImage(torch.nn.Module):
         points = torch.cat(
             [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
         )
-        four_dim_points = (points @ self.full_proj_transform) # nx4
+        four_dim_points = points @ self.full_proj_transform  # nx4
         three_dim_points = four_dim_points[:, :3] / four_dim_points[:, 3].unsqueeze(1)
         three_dim_points[:, 0] = ndc2Pix(three_dim_points[:, 0], self.width)
-        three_dim_points[:, 1] = ndc2Pix(three_dim_points[:, 1], self.height) 
+        three_dim_points[:, 1] = ndc2Pix(three_dim_points[:, 1], self.height)
         return three_dim_points, colors[in_frustum_truth]

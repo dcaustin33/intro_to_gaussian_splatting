@@ -9,6 +9,7 @@ class BasicPointCloud(NamedTuple):
     colors: np.array
     normals: np.array
 
+
 class PreprocessedScene(NamedTuple):
     points: torch.Tensor
     colors: torch.Tensor

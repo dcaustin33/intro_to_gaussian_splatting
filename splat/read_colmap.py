@@ -1,23 +1,21 @@
 """ALL code taken from colamp.scripts.python.read_write_model.py"""
 
-import torch
 import collections
-import numpy as np
 import struct
+
+import numpy as np
+import torch
 
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"]
 )
-Camera = collections.namedtuple(
-    "Camera", ["id", "model", "width", "height", "params"]
-)
+Camera = collections.namedtuple("Camera", ["id", "model", "width", "height", "params"])
 BaseImage = collections.namedtuple(
     "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"]
 )
 Point3D = collections.namedtuple(
     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"]
 )
-
 
 
 CAMERA_MODELS = {
@@ -40,6 +38,7 @@ CAMERA_MODEL_NAMES = dict(
     [(camera_model.model_name, camera_model) for camera_model in CAMERA_MODELS]
 )
 
+
 def qvec2rotmat(qvec: torch.Tensor):
     """gets the rotation matrix for a 4, vector"""
     return torch.Tensor(
@@ -61,7 +60,8 @@ def qvec2rotmat(qvec: torch.Tensor):
             ],
         ]
     )
-    
+
+
 def qvec2rotmat_matrix(qvecs: torch.Tensor):
     """Gets the rotation matrix for a Nx4 matrix"""
     return torch.stack([qvec2rotmat(qvec) for qvec in qvecs])
@@ -70,6 +70,7 @@ def qvec2rotmat_matrix(qvecs: torch.Tensor):
 class Image(BaseImage):
     def qvec2rotmat(self):
         return qvec2rotmat(self.qvec)
+
 
 def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
     """Read and unpack the next bytes from a binary file.
@@ -81,6 +82,7 @@ def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
     """
     data = fid.read(num_bytes)
     return struct.unpack(endian_character + format_char_sequence, data)
+
 
 def read_cameras_text(path):
     """
@@ -210,9 +212,9 @@ def read_images_binary(path_to_model_file):
                 binary_image_name += current_char
                 current_char = read_next_bytes(fid, 1, "c")[0]
             image_name = binary_image_name.decode("utf-8")
-            num_points2D = read_next_bytes(
-                fid, num_bytes=8, format_char_sequence="Q"
-            )[0]
+            num_points2D = read_next_bytes(fid, num_bytes=8, format_char_sequence="Q")[
+                0
+            ]
             x_y_id_s = read_next_bytes(
                 fid,
                 num_bytes=24 * num_points2D,
@@ -235,6 +237,7 @@ def read_images_binary(path_to_model_file):
                 point3D_ids=point3D_ids,
             )
     return images
+
 
 def read_points3D_text(path):
     """
@@ -285,9 +288,9 @@ def read_points3D_binary(path_to_model_file):
             xyz = np.array(binary_point_line_properties[1:4])
             rgb = np.array(binary_point_line_properties[4:7])
             error = np.array(binary_point_line_properties[7])
-            track_length = read_next_bytes(
-                fid, num_bytes=8, format_char_sequence="Q"
-            )[0]
+            track_length = read_next_bytes(fid, num_bytes=8, format_char_sequence="Q")[
+                0
+            ]
             track_elems = read_next_bytes(
                 fid,
                 num_bytes=8 * track_length,

@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import torch
 from torch.utils.cpp_extension import load_inline
+
 
 def load_cpp_extension():
     cpp_source = Path(
