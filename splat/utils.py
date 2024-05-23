@@ -263,10 +263,12 @@ def compute_2d_covariance(
 ) -> torch.Tensor:
     """
     Compute the 2D covariance matrix for each gaussian
-    
+
     W is in the uW format so transpose for final calc
     """
-    points = torch.cat([points, torch.ones(points.shape[0], 1, device=points.device)], dim=1)
+    points = torch.cat(
+        [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
+    )
     points_transformed = (points @ W)[:, :3]
     limx = 1.3 * tan_fovX
     limy = 1.3 * tan_fovY
@@ -275,19 +277,20 @@ def compute_2d_covariance(
     z = points_transformed[:, 2]
     x = torch.clamp(x, -limx, limx) * z
     y = torch.clamp(y, -limy, limy) * z
-    
+
     J = torch.zeros((points_transformed.shape[0], 3, 3))
     J[:, 0, 0] = focal_x / z
-    J[:, 0, 2] = -(focal_x * x) / (z ** 2)
+    J[:, 0, 2] = -(focal_x * x) / (z**2)
     J[:, 1, 1] = focal_y / z
-    J[:, 1, 2] = -(focal_y * y) / (z ** 2)
-    
+    J[:, 1, 2] = -(focal_y * y) / (z**2)
+
     W = W[:3, :3].T
 
     return (J @ W @ covariance_3d @ W.T @ J.transpose(1, 2))[:, :2, :2]
 
+
 def compute_gaussian_weight(
-    pixel_coord: torch.Tensor, # (1, 2) tensor
+    pixel_coord: torch.Tensor,  # (1, 2) tensor
     point_mean: torch.Tensor,
     inverse_covariance: torch.Tensor,
 ) -> torch.Tensor:
