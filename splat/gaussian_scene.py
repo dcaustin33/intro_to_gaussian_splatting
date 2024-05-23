@@ -1,5 +1,6 @@
 import math
 import os
+import time
 from typing import Dict, Tuple
 
 import pycolmap
@@ -331,11 +332,6 @@ class GaussianScene(nn.Module):
 
         image = torch.zeros((width, height, 3))
         ext = self.compile_c_ext()
-        import pdb
-
-        pdb.set_trace()
-
-        import time
 
         now = time.time()
         image = ext.render_image(
