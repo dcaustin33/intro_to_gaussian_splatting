@@ -321,7 +321,7 @@ class GaussianScene(nn.Module):
     torch::Tensor opacity)"""
 
         cuda_src = Path(
-            "/Users/derek/Desktop/personal_gaussian_splatting/splat/c/render.cu"
+            "/teamspace/studios/this_studio/personal_gaussian_splatting/splat/c/render.cu"
         ).read_text()
 
         return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
