@@ -303,10 +303,10 @@ def compute_gaussian_weight(
 
 def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=False):
     return load_inline(
-        cuda_sources=[cuda_src],
+        name='render_image',
         cpp_sources=[cpp_src],
-        functions=funcs,
-        extra_cuda_cflags=["-O2"] if opt else [],
-        verbose=verbose,
-        name="inline_ext",
+        cuda_sources=[cuda_src],
+        functions=['render_image'],
+        extra_cuda_cflags=['-std=c++14'],
+        extra_cflags=['-std=c++14']
     )
