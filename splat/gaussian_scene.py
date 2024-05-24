@@ -20,7 +20,7 @@ from splat.utils import (
     ndc2Pix,
     read_camera_file,
     read_image_file,
-    load_cuda
+    load_cuda,
 )
 
 
@@ -60,12 +60,12 @@ class GaussianScene(nn.Module):
         """
         return compute_2d_covariance(
             points=points,
-            W=self.images[image_idx].world2view,
+            W=self.images[image_idx].world2view.to(points.device),
             covariance_3d=covariance_3d,
-            tan_fovX=self.images[image_idx].tan_fovX,
-            tan_fovY=self.images[image_idx].tan_fovY,
-            focal_x=self.images[image_idx].f_x,
-            focal_y=self.images[image_idx].f_y,
+            tan_fovX=self.images[image_idx].tan_fovX.to(points.device),
+            tan_fovY=self.images[image_idx].tan_fovY.to(points.device),
+            focal_x=self.images[image_idx].f_x.to(points.device),
+            focal_y=self.images[image_idx].f_y.to(points.device),
         )
 
     def compute_radius(
@@ -101,14 +101,21 @@ class GaussianScene(nn.Module):
         covariance_3d = self.gaussians.get_3d_covariance_matrix()[in_view]
 
         points = self.gaussians.points[in_view]
-        points_homogeneous = torch.cat([points, torch.ones(points.shape[0], 1)], dim=1)
-        points_view = (points_homogeneous @ self.images[image_idx].world2view)[:, :3]
+        points_homogeneous = torch.cat(
+            [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
+        )
+        points_view = (
+            points_homogeneous
+            @ self.images[image_idx].world2view.to(points_homogeneous.device)
+        )[:, :3]
 
-        points_ndc = points_homogeneous @ self.images[image_idx].full_proj_transform
+        points_ndc = points_homogeneous @ self.images[image_idx].full_proj_transform.to(
+            points_homogeneous.device
+        )
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)
         points_xy = points_ndc[:, :2]
-        points_xy[:, 0] = ndc2Pix(points_xy[:, 0], self.images[image_idx].width)
-        points_xy[:, 1] = ndc2Pix(points_xy[:, 1], self.images[image_idx].height)
+        points_xy[:, 0] = ndc2Pix(points_xy[:, 0], self.images[image_idx].width.to(points_xy.device))
+        points_xy[:, 1] = ndc2Pix(points_xy[:, 1], self.images[image_idx].height.to(points_xy.device))
 
         covariance_2d = self.get_2d_covariance(
             image_idx=image_idx, points=points, covariance_3d=covariance_3d
@@ -244,16 +251,16 @@ class GaussianScene(nn.Module):
                 inverse_covariance_in_tile = preprocessed_scene.inverse_covariance_2d[
                     points_in_tile
                 ]
-                image[
-                    x_min : x_min + tile_size, y_min : y_min + tile_size
-                ] = self.render_tile(
-                    x_min=x_min,
-                    y_min=y_min,
-                    points_in_tile_mean=points_in_tile_mean,
-                    colors=colors_in_tile,
-                    opacities=opacities_in_tile,
-                    inverse_covariance=inverse_covariance_in_tile,
-                    tile_size=tile_size,
+                image[x_min : x_min + tile_size, y_min : y_min + tile_size] = (
+                    self.render_tile(
+                        x_min=x_min,
+                        y_min=y_min,
+                        points_in_tile_mean=points_in_tile_mean,
+                        colors=colors_in_tile,
+                        opacities=opacities_in_tile,
+                        inverse_covariance=inverse_covariance_in_tile,
+                        tile_size=tile_size,
+                    )
                 )
         return image
 
@@ -302,11 +309,11 @@ class GaussianScene(nn.Module):
         print("operation took ", time.time() - now)
         print("Operation took seconds: ", time.time() - now)
         return image
-    
+
     def compile_cuda_ext(
         self,
     ) -> torch.jit.ScriptModule:
-        
+
         cpp_src = """torch::Tensor render_image(
 int image_height,
 int image_width,
@@ -318,16 +325,17 @@ torch::Tensor min_x,
 torch::Tensor max_x,
 torch::Tensor min_y,
 torch::Tensor max_y,
-torch::Tensor opacity)"""
+torch::Tensor opacity);"""
 
         cuda_src = Path(
             "/teamspace/studios/this_studio/personal_gaussian_splatting/splat/c/render.cu"
         ).read_text()
 
         return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
-    
-    
-    def render_image_cuda(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
+
+    def render_image_cuda(
+        self, image_idx: int, ext, tile_size: int = 16
+    ) -> torch.Tensor:
         preprocessed_scene = self.preprocess(image_idx)
         height = self.images[image_idx].height
         width = self.images[image_idx].width
@@ -336,20 +344,22 @@ torch::Tensor opacity)"""
         width = 3200
 
         image = torch.zeros((width, height, 3))
-        ext = self.compile_cuda_ext()
+        # ext = self.compile_cuda_ext()
 
         now = time.time()
         image = ext.render_image(
+            height,
+            width,
+            tile_size,
+            preprocessed_scene.points.contiguous(),
+            preprocessed_scene.colors.contiguous(),
+            preprocessed_scene.inverse_covariance_2d.contiguous(),
             preprocessed_scene.min_x.contiguous(),
             preprocessed_scene.max_x.contiguous(),
             preprocessed_scene.min_y.contiguous(),
             preprocessed_scene.max_y.contiguous(),
-            preprocessed_scene.points.contiguous(),
-            preprocessed_scene.colors.contiguous(),
             preprocessed_scene.sigmoid_opacity.contiguous(),
-            preprocessed_scene.inverse_covariance_2d.contiguous(),
         )
         print("operation took ", time.time() - now)
         print("Operation took seconds: ", time.time() - now)
         return image
-        

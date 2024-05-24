@@ -27,7 +27,7 @@ class Gaussians(nn.Module):
         gradient_pos_threshold: float = 0.0002,
         model_path: str = ".",
     ) -> None:
-        self.device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.point_cloud_path = os.path.join(model_path, "point_cloud.ply")
         storePly(self.point_cloud_path, points, colors)
         self.points = points.clone().requires_grad_(True).to(self.device).float()
@@ -38,11 +38,11 @@ class Gaussians(nn.Module):
         # self.initialize_scale()
 
         print("initialized_points")
-        self.quaternions = torch.zeros((len(self.points), 4))
+        self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
         self.quaternions[:, 0] = 1.0
         self.opacity = inverse_sigmoid(
             1 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
-        )
+        ).to(self.device)
 
     def initialize_scale(
         self,
