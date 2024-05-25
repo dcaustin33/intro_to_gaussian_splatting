@@ -13,6 +13,7 @@ from splat.read_colmap import (
     read_images_text,
 )
 from splat.schema import BasicPointCloud
+from torch.utils.cpp_extension import load_inline
 
 
 def get_intrinsic_matrix(
@@ -278,7 +279,7 @@ def compute_2d_covariance(
     x = torch.clamp(x, -limx, limx) * z
     y = torch.clamp(y, -limy, limy) * z
 
-    J = torch.zeros((points_transformed.shape[0], 3, 3))
+    J = torch.zeros((points_transformed.shape[0], 3, 3), device=covariance_3d.device)
     J[:, 0, 0] = focal_x / z
     J[:, 0, 2] = -(focal_x * x) / (z**2)
     J[:, 1, 1] = focal_y / z
@@ -298,3 +299,14 @@ def compute_gaussian_weight(
     difference = point_mean - pixel_coord
     power = -0.5 * difference @ inverse_covariance @ difference.T
     return torch.exp(power).item()
+
+
+def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=False):
+    return load_inline(
+        name="render_image",
+        cpp_sources=[cpp_src],
+        cuda_sources=[cuda_src],
+        functions=["render_image"],
+        extra_cuda_cflags=["-std=c++14"],
+        extra_cflags=["-std=c++14"],
+    )

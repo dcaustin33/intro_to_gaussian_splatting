@@ -2044,7 +2044,18 @@ files = [
     {file = "wcwidth-0.2.13.tar.gz", hash = "sha256:72ea0c06399eb286d978fdedb6923a9eb47e1c486ce63e9b4e64fc18303972b5"},
 ]
 
+[[package]]
+name = "wurlitzer"
+version = "3.1.0"
+description = "Capture C-level output in context managers"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "wurlitzer-3.1.0-py3-none-any.whl", hash = "sha256:a20994e53681fea8fb9d16dc05ff5f9f9701f09723d894456a6d6b29cfb3188d"},
+    {file = "wurlitzer-3.1.0.tar.gz", hash = "sha256:b31d3b18ab6b8394b3adb8b21841ad6d4b6bb195b9b642953872dbbab4c29b2a"},
+]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "9e71ce149874c551adea67a4cf1a1518bb779f0b5a6d82c24ebb3d894b9b8c40"
+content-hash = "55cad3351ebf5a3a06023a1142ed7f4c998180f997f1c6e0a36b87b4423725a9"

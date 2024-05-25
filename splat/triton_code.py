@@ -122,9 +122,9 @@ if __name__ == "__main__":
 
     point_weight = torch.zeros(num_points, 1, device=device)
 
-    compute_gaussian_weight[
-        1,
-    ](point_means, points_in_view, inverse_covariance, point_weight, num_points)
+    compute_gaussian_weight[1,](
+        point_means, points_in_view, inverse_covariance, point_weight, num_points
+    )
 
     # n_elements = 10
     # x = torch.Tensor([0, 1, 2, 3])
