@@ -43,6 +43,8 @@ __global__ void render_tile(
         return;
     }
 
+    printf("pixel_x: %d, pixel_y: %d\n", pixel_x, pixel_y);
+
     float total_weight = 0.0f;
     float3 color = {0.0f, 0.0f, 0.0f};
 
@@ -110,17 +112,6 @@ torch::Tensor render_image(
         opacity_t{opacity, "opacity", 8};
     torch::checkAllSameGPU("render_image", {point_means_t, point_colors_t, inverse_covariance_2d_t, min_x_t, max_x_t, min_y_t, max_y_t, opacity_t});
 
-    // Ensure the input tensors are contiguous
-    torch::TensorArg point_means_contiguous = torch::TensorArg(point_means.contiguous(), "point_means", 1),
-        point_colors_contiguous = torch::TensorArg(point_colors.contiguous(), "point_colors", 2),
-        inverse_covariance_2d_contiguous = torch::TensorArg(inverse_covariance_2d.contiguous(), "inverse_covariance_2d", 3),
-        min_x_contiguous = torch::TensorArg(min_x.contiguous(), "min_x", 4),
-        max_x_contiguous = torch::TensorArg(max_x.contiguous(), "max_x", 5),
-        min_y_contiguous = torch::TensorArg(min_y.contiguous(), "min_y", 6),
-        max_y_contiguous = torch::TensorArg(max_y.contiguous(), "max_y", 7),
-        opacity_contiguous = torch::TensorArg(opacity.contiguous(), "opacity", 8);
-    torch::checkAllContiguous("render_image", {point_means_contiguous, point_colors_contiguous, inverse_covariance_2d_contiguous,
-                                                  min_x_contiguous, max_x_contiguous, min_y_contiguous, max_y_contiguous, opacity_contiguous});
     
     // Create an output tensor for the image
     torch::Tensor image = torch::zeros({image_height, image_width, 3}, point_means.options());
