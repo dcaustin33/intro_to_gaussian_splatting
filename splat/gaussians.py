@@ -40,7 +40,7 @@ class Gaussians(nn.Module):
             (colors / 256).clone().requires_grad_(True).to(self.device).float()
         )
         if scale is None:
-            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.001
+            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.01
             # self.initialize_scale()
         else:
             self.scales = torch.tensor(scale).to(self.device).float()
