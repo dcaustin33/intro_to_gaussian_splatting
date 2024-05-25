@@ -114,8 +114,12 @@ class GaussianScene(nn.Module):
         )
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)
         points_xy = points_ndc[:, :2]
-        points_xy[:, 0] = ndc2Pix(points_xy[:, 0], self.images[image_idx].width.to(points_xy.device))
-        points_xy[:, 1] = ndc2Pix(points_xy[:, 1], self.images[image_idx].height.to(points_xy.device))
+        points_xy[:, 0] = ndc2Pix(
+            points_xy[:, 0], self.images[image_idx].width.to(points_xy.device)
+        )
+        points_xy[:, 1] = ndc2Pix(
+            points_xy[:, 1], self.images[image_idx].height.to(points_xy.device)
+        )
 
         covariance_2d = self.get_2d_covariance(
             image_idx=image_idx, points=points, covariance_3d=covariance_3d
@@ -177,8 +181,8 @@ class GaussianScene(nn.Module):
         inverse_covariance: torch.Tensor,
         min_weight: float = 0.000001,
     ) -> torch.Tensor:
-        total_weight = 1
-        pixel_color = torch.zeros((1, 1, 3))
+        total_weight = torch.ones(1).to(points_in_tile_mean.device)
+        pixel_color = torch.zeros((1, 1, 3)).to(points_in_tile_mean.device)
         for point_idx in range(points_in_tile_mean.shape[0]):
             point = points_in_tile_mean[point_idx, :].view(1, 2)
             weight = compute_gaussian_weight(
@@ -207,12 +211,14 @@ class GaussianScene(nn.Module):
     ) -> torch.Tensor:
         """Points in tile should be arranged in order of depth"""
 
-        tile = torch.zeros((16, 16, 3))
+        tile = torch.zeros((tile_size, tile_size, 3))
 
         for pixel_x in range(x_min, x_min + tile_size):
             for pixel_y in range(y_min, y_min + tile_size):
                 tile[pixel_x % tile_size, pixel_y % tile_size] = self.render_pixel(
-                    pixel_coords=torch.Tensor([pixel_x, pixel_y]).view(1, 2),
+                    pixel_coords=torch.Tensor(
+                        [pixel_x, pixel_y]
+                    ).view(1, 2).to(points_in_tile_mean.device),
                     points_in_tile_mean=points_in_tile_mean,
                     colors=colors,
                     opacities=opacities,
@@ -235,7 +241,6 @@ class GaussianScene(nn.Module):
             x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
                 preprocessed_scene.max_x >= x_min
             )
-            print("x_in_tile", x_in_tile.sum())
             if x_in_tile.sum() == 0:
                 continue
             for y_min in range(0, height, tile_size):
@@ -339,11 +344,6 @@ torch::Tensor opacity);"""
         preprocessed_scene = self.preprocess(image_idx)
         height = self.images[image_idx].height
         width = self.images[image_idx].width
-
-        height = 3200
-        width = 3200
-
-        image = torch.zeros((width, height, 3))
         # ext = self.compile_cuda_ext()
 
         now = time.time()
@@ -360,6 +360,6 @@ torch::Tensor opacity);"""
             preprocessed_scene.max_y.contiguous(),
             preprocessed_scene.sigmoid_opacity.contiguous(),
         )
-        print("operation took ", time.time() - now)
+        torch.cuda.synchronize()
         print("Operation took seconds: ", time.time() - now)
         return image
