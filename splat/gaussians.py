@@ -41,7 +41,7 @@ class Gaussians(nn.Module):
         self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
         self.quaternions[:, 0] = 1.0
         self.opacity = inverse_sigmoid(
-            1 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
+            .9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
         ).to(self.device)
 
     def initialize_scale(
