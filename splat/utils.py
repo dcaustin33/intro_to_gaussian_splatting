@@ -238,7 +238,7 @@ def in_view_frustum(
 
     minimum_z is the minimum z set in the authors code
     """
-    homogeneous = torch.ones((points.shape[0], 4))
+    homogeneous = torch.ones((points.shape[0], 4), device=points.device)
     homogeneous[:, :3] = points
     projected_points = homogeneous @ view_matrix
     z_component = projected_points[:, 2]
