@@ -17,10 +17,12 @@ from splat.utils import (
     compute_2d_covariance,
     compute_gaussian_weight,
     in_view_frustum,
+    load_cuda,
     ndc2Pix,
     read_camera_file,
     read_image_file,
-    load_cuda,
+    compute_radius,
+    compute_inverse_covariance,
 )
 
 
@@ -30,10 +32,19 @@ class GaussianScene(nn.Module):
         colmap_path: str,
         gaussians: Gaussians,
     ) -> None:
+        """Scene class that will be used to render images
+
+        Args:
+            colmap_path (str): path to the colmap process path
+                should have the ending "sparse/0"
+            gaussians (Gaussians): initialized gaussian points from the
+                Gaussians class
+        """
         super().__init__()
 
         camera_dict = read_camera_file(colmap_path)
         image_dict = read_image_file(colmap_path)
+
         self.images = {}
         for idx in image_dict.keys():
             image = image_dict[idx]
@@ -43,10 +54,9 @@ class GaussianScene(nn.Module):
 
         self.gaussians = gaussians
 
-    def render_points_image(self, image_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def render_image_points(self, image_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Helper function that can be gotten rid of once we know
-        implementation is correct
+        Simple function to transform the points to a specific image viewpoint
         """
         return self.images[image_idx].project_point_to_camera_perspective_projection(
             self.gaussians.points, self.gaussians.colors
@@ -68,31 +78,7 @@ class GaussianScene(nn.Module):
             focal_y=self.images[image_idx].f_y.to(points.device),
         )
 
-    def compute_radius(
-        self, covariance_2d: torch.Tensor, determinant: torch.Tensor
-    ) -> torch.Tensor:
-        midpoint = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
-        lambda1 = midpoint + torch.sqrt(midpoint**2 - determinant)
-        lambda2 = midpoint - torch.sqrt(midpoint**2 - determinant)
-        max_lambda = torch.max(lambda1, lambda2)
-        radius = torch.ceil(2.5 * torch.sqrt(max_lambda))
-        return radius
-
-    def compute_inverse_covariance(
-        self, covariance_2d: torch.Tensor, determinant: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Compute the inverse covariance matrix
-        """
-        determinant = torch.clamp(determinant, min=1e-3)
-        inverse_covariance = torch.zeros_like(covariance_2d)
-        inverse_covariance[:, 0, 0] = covariance_2d[:, 1, 1] / determinant
-        inverse_covariance[:, 1, 1] = covariance_2d[:, 0, 0] / determinant
-        inverse_covariance[:, 0, 1] = -covariance_2d[:, 0, 1] / determinant
-        inverse_covariance[:, 1, 0] = -covariance_2d[:, 1, 0] / determinant
-        return inverse_covariance
-
-    def preprocess(self, image_idx: int, tile_size: int = 16) -> None:
+    def preprocess(self, image_idx: int) -> None:
         """Preprocesses before rendering begins"""
         in_view = in_view_frustum(
             points=self.gaussians.points,
@@ -130,9 +116,9 @@ class GaussianScene(nn.Module):
             covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
             - covariance_2d[:, 0, 1] ** 2
         )
-        inverse_covariance = self.compute_inverse_covariance(covariance_2d, determinant)
+        inverse_covariance = compute_inverse_covariance(covariance_2d, determinant)
         # now we compute the radius
-        radius = self.compute_radius(covariance_2d, determinant)
+        radius = compute_radius(covariance_2d, determinant)
 
         min_x = torch.floor(points_xy[:, 0] - radius)
         min_y = torch.floor(points_xy[:, 1] - radius)
@@ -216,9 +202,9 @@ class GaussianScene(nn.Module):
         for pixel_x in range(x_min, x_min + tile_size):
             for pixel_y in range(y_min, y_min + tile_size):
                 tile[pixel_x % tile_size, pixel_y % tile_size] = self.render_pixel(
-                    pixel_coords=torch.Tensor(
-                        [pixel_x, pixel_y]
-                    ).view(1, 2).to(points_in_tile_mean.device),
+                    pixel_coords=torch.Tensor([pixel_x, pixel_y])
+                    .view(1, 2)
+                    .to(points_in_tile_mean.device),
                     points_in_tile_mean=points_in_tile_mean,
                     colors=colors,
                     opacities=opacities,
@@ -269,82 +255,35 @@ class GaussianScene(nn.Module):
                 )
         return image
 
-    def compile_c_ext(
-        self,
-    ) -> torch.jit.ScriptModule:
-
-        cpp_source = Path(
-            "/Users/derek/Desktop/personal_gaussian_splatting/splat/c/loop.c"
-        ).read_text()
-
-        # Load the CUDA kernel as a PyTorch extension
-        copy_extension = load_inline(
-            name="render_image",
-            cpp_sources=cpp_source,
-            functions=["render_pixel", "render_image"],
-            with_cuda=False,
-            # cuda_sources=cuda_source,
-            # extra_cuda_cflags=["-O2"],
-            # build_directory='./cuda_build',
-        )
-        return copy_extension
-
-    def render_image_c_again(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
-        preprocessed_scene = self.preprocess(image_idx)
-        height = self.images[image_idx].height
-        width = self.images[image_idx].width
-
-        height = 3200
-        width = 3200
-
-        image = torch.zeros((width, height, 3))
-        ext = self.compile_c_ext()
-
-        now = time.time()
-        image = ext.render_image(
-            preprocessed_scene.min_x,
-            preprocessed_scene.max_x,
-            preprocessed_scene.min_y,
-            preprocessed_scene.max_y,
-            preprocessed_scene.points,
-            preprocessed_scene.colors,
-            preprocessed_scene.sigmoid_opacity,
-            preprocessed_scene.inverse_covariance_2d,
-        )
-        print("operation took ", time.time() - now)
-        print("Operation took seconds: ", time.time() - now)
-        return image
-
     def compile_cuda_ext(
         self,
     ) -> torch.jit.ScriptModule:
 
-        cpp_src = """torch::Tensor render_image(
-int image_height,
-int image_width,
-int tile_size,
-torch::Tensor point_means,
-torch::Tensor point_colors,
-torch::Tensor inverse_covariance_2d,
-torch::Tensor min_x,
-torch::Tensor max_x,
-torch::Tensor min_y,
-torch::Tensor max_y,
-torch::Tensor opacity);"""
+        cpp_src = """
+        torch::Tensor render_image(
+            int image_height,
+            int image_width,
+            int tile_size,
+            torch::Tensor point_means,
+            torch::Tensor point_colors,
+            torch::Tensor inverse_covariance_2d,
+            torch::Tensor min_x,
+            torch::Tensor max_x,
+            torch::Tensor min_y,
+            torch::Tensor max_y,
+            torch::Tensor opacity);
+        """
 
-        cuda_src = Path(
-            "/teamspace/studios/this_studio/personal_gaussian_splatting/splat/c/render.cu"
-        ).read_text()
+        cuda_src = Path("splat/c/render.cu").read_text()
 
         return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
 
-    def render_image_cuda(
-        self, image_idx: int, ext, tile_size: int = 16
-    ) -> torch.Tensor:
+    def render_image_cuda(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
         preprocessed_scene = self.preprocess(image_idx)
         height = self.images[image_idx].height
         width = self.images[image_idx].width
-        # ext = self.compile_cuda_ext()
+        print("Compiling extension, depending on resouces this can take 1-5 mins")
+        ext = self.compile_cuda_ext()
 
         now = time.time()
         image = ext.render_image(

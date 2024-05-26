@@ -1,20 +1,9 @@
-import math
 import os
-from typing import Tuple
 
 import torch
 from torch import nn
-from tqdm import tqdm
 
-from splat.read_colmap import qvec2rotmat, qvec2rotmat_matrix
-from splat.utils import (
-    build_rotation,
-    extract_gaussian_weight,
-    fetchPly,
-    getWorld2View,
-    inverse_sigmoid,
-    storePly,
-)
+from splat.utils import build_rotation, inverse_sigmoid, storePly
 
 
 class Gaussians(nn.Module):
@@ -22,9 +11,6 @@ class Gaussians(nn.Module):
         self,
         points: torch.Tensor,
         colors: torch.Tensor,
-        e_opacity: float = 0.005,
-        divide_scale: float = 1.6,
-        gradient_pos_threshold: float = 0.0002,
         model_path: str = ".",
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,13 +21,15 @@ class Gaussians(nn.Module):
             (colors / 256).clone().requires_grad_(True).to(self.device).float()
         )
         self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.001
+        # for now we do not use initialize scale
+        # however from the paper the scale is initialized using 
+        # mean of the three smallest nonzero distances for each point
         # self.initialize_scale()
 
-        print("initialized_points")
         self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
         self.quaternions[:, 0] = 1.0
         self.opacity = inverse_sigmoid(
-            .9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
+            0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
         ).to(self.device)
 
     def initialize_scale(

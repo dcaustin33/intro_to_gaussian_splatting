@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 import numpy as np
 import torch
 from plyfile import PlyData, PlyElement
+from torch.utils.cpp_extension import load_inline
 
 from splat.read_colmap import (
     read_cameras_binary,
@@ -13,7 +14,6 @@ from splat.read_colmap import (
     read_images_text,
 )
 from splat.schema import BasicPointCloud
-from torch.utils.cpp_extension import load_inline
 
 
 def get_intrinsic_matrix(
@@ -309,4 +309,38 @@ def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=
         functions=["render_image"],
         extra_cuda_cflags=["-std=c++14"],
         extra_cflags=["-std=c++14"],
+    )
+
+def compute_inverse_covariance(
+    covariance_2d: torch.Tensor, determinant: torch.Tensor
+) -> torch.Tensor:
+    """
+    Compute the inverse covariance matrix
+    """
+    determinant = torch.clamp(determinant, min=1e-3)
+    inverse_covariance = torch.zeros_like(covariance_2d)
+    inverse_covariance[:, 0, 0] = covariance_2d[:, 1, 1] / determinant
+    inverse_covariance[:, 1, 1] = covariance_2d[:, 0, 0] / determinant
+    inverse_covariance[:, 0, 1] = -covariance_2d[:, 0, 1] / determinant
+    inverse_covariance[:, 1, 0] = -covariance_2d[:, 1, 0] / determinant
+    return inverse_covariance
+
+def compute_radius(
+    covariance_2d: torch.Tensor, determinant: torch.Tensor
+) -> torch.Tensor:
+    """
+    Compute the radius of the 2D covariance matrix
+    """
+    return torch.sqrt(
+        covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
+    )
+
+def load_cuda(cuda_src, cpp_src, funcs, opt=True, verbose=False):
+    return load_inline(
+        name="inline_ext",
+        cpp_sources=[cpp_src],
+        cuda_sources=[cuda_src],
+        functions=funcs,
+        extra_cuda_cflags=["-O1"] if opt else [],
+        verbose=verbose
     )

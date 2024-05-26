@@ -1,4 +1,4 @@
-"""ALL code taken from colamp.scripts.python.read_write_model.py"""
+"""ALL code taken from colamp.scripts.python.read_write_model.py in the colmap directory"""
 
 import collections
 import struct
