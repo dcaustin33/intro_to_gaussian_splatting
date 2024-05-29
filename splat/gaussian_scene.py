@@ -15,14 +15,14 @@ from splat.image import GaussianImage
 from splat.schema import PreprocessedScene
 from splat.utils import (
     compute_2d_covariance,
+    compute_extent_and_radius,
     compute_gaussian_weight,
+    compute_inverted_covariance,
     in_view_frustum,
-    load_cuda,
     ndc2Pix,
     read_camera_file,
     read_image_file,
-    compute_radius,
-    compute_inverted_covariance,
+    load_cuda,
 )
 
 
@@ -32,19 +32,10 @@ class GaussianScene(nn.Module):
         colmap_path: str,
         gaussians: Gaussians,
     ) -> None:
-        """Scene class that will be used to render images
-
-        Args:
-            colmap_path (str): path to the colmap process path
-                should have the ending "sparse/0"
-            gaussians (Gaussians): initialized gaussian points from the
-                Gaussians class
-        """
         super().__init__()
 
         camera_dict = read_camera_file(colmap_path)
         image_dict = read_image_file(colmap_path)
-
         self.images = {}
         for idx in image_dict.keys():
             image = image_dict[idx]
@@ -54,9 +45,10 @@ class GaussianScene(nn.Module):
 
         self.gaussians = gaussians
 
-    def render_image_points(self, image_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def render_points_image(self, image_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Simple function to transform the points to a specific image viewpoint
+        Helper function that can be gotten rid of once we know
+        implementation is correct
         """
         return self.images[image_idx].project_point_to_camera_perspective_projection(
             self.gaussians.points, self.gaussians.colors
@@ -78,7 +70,7 @@ class GaussianScene(nn.Module):
             focal_y=self.images[image_idx].f_y.to(points.device),
         )
 
-    def preprocess(self, image_idx: int) -> None:
+    def preprocess(self, image_idx: int, tile_size: int = 16) -> None:
         """Preprocesses before rendering begins"""
         in_view = in_view_frustum(
             points=self.gaussians.points,
@@ -111,9 +103,15 @@ class GaussianScene(nn.Module):
             image_idx=image_idx, points=points, covariance_3d=covariance_3d
         )
 
+        # I am not sure what we are exactly doing here
+        determinant = (
+            covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
+            - covariance_2d[:, 0, 1] ** 2
+        )
         inverse_covariance = compute_inverted_covariance(covariance_2d)
         # now we compute the radius
-        radius = compute_radius(covariance_2d)
+        # radius = self.compute_radius(covariance_2d, determinant)
+        radius = compute_extent_and_radius(covariance_2d)
 
         min_x = torch.floor(points_xy[:, 0] - radius)
         min_y = torch.floor(points_xy[:, 1] - radius)
@@ -171,7 +169,7 @@ class GaussianScene(nn.Module):
                 point_mean=point,
                 inverse_covariance=inverse_covariance[point_idx],
             )
-            alpha = min(.99, weight * torch.sigmoid(opacities[point_idx]))
+            alpha = weight * torch.sigmoid(opacities[point_idx])
             test_weight = total_weight * (1 - alpha)
             if test_weight < min_weight:
                 return pixel_color
@@ -197,9 +195,9 @@ class GaussianScene(nn.Module):
         for pixel_x in range(x_min, x_min + tile_size):
             for pixel_y in range(y_min, y_min + tile_size):
                 tile[pixel_x % tile_size, pixel_y % tile_size] = self.render_pixel(
-                    pixel_coords=torch.Tensor([pixel_x, pixel_y])
-                    .view(1, 2)
-                    .to(points_in_tile_mean.device),
+                    pixel_coords=torch.Tensor(
+                        [pixel_x, pixel_y]
+                    ).view(1, 2).to(points_in_tile_mean.device),
                     points_in_tile_mean=points_in_tile_mean,
                     colors=colors,
                     opacities=opacities,
@@ -215,15 +213,15 @@ class GaussianScene(nn.Module):
 
         image = torch.zeros((width, height, 3))
 
-        for x_min in tqdm(range(0, width, tile_size)):
-            x_in_tile = (x_min >= preprocessed_scene.min_x) & (
-                x_min + tile_size <= preprocessed_scene.max_x
+        for x_min in tqdm(range(2000, width - tile_size, tile_size)):
+            x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
+                preprocessed_scene.max_x >= x_min
             )
             if x_in_tile.sum() == 0:
                 continue
-            for y_min in range(0, height, tile_size):
-                y_in_tile = (y_min >= preprocessed_scene.min_y) & (
-                    y_min + tile_size <= preprocessed_scene.max_y
+            for y_min in range(0, height - tile_size, tile_size):
+                y_in_tile = (preprocessed_scene.min_y <= y_min + tile_size) & (
+                    preprocessed_scene.max_y >= y_min
                 )
                 points_in_tile = x_in_tile & y_in_tile
                 if points_in_tile.sum() == 0:
@@ -270,11 +268,12 @@ class GaussianScene(nn.Module):
 
         return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
 
-    def render_image_cuda(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
+    def render_image_cuda(
+        self, image_idx: int, tile_size: int = 16
+    ) -> torch.Tensor:
         preprocessed_scene = self.preprocess(image_idx)
         height = self.images[image_idx].height
         width = self.images[image_idx].width
-        print("Compiling extension, depending on resouces this can take 1-5 mins")
         ext = self.compile_cuda_ext()
 
         now = time.time()

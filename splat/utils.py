@@ -353,23 +353,32 @@ def compute_inverted_covariance(covariance_2d: torch.Tensor) -> torch.Tensor:
 
 
 def compute_radius(
-    covariance_2d: torch.Tensor,
+    covariance_2d: torch.Tensor
 ) -> torch.Tensor:
-    """
-    Compute the radius of the 2D covariance matrix
-    """
-    return torch.sqrt(
-        covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
+    determinant = (
+        covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
+        - covariance_2d[:, 0, 1] * covariance_2d[:, 1, 0]
     )
+    midpoint = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
+    lambda1 = midpoint + torch.sqrt(midpoint**2 - determinant)
+    lambda2 = midpoint - torch.sqrt(midpoint**2 - determinant)
+    max_lambda = torch.max(lambda1, lambda2)
+    radius = torch.ceil(2.5 * torch.sqrt(max_lambda))
+    return radius
     
 def compute_extent_and_radius(covariance_2d: torch.Tensor):
     mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
     det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
-    lambda1 = mid + np.sqrt(max(0.1, mid * mid - det))
-    lambda2 = mid - np.sqrt(max(0.1, mid * mid - det))
-    my_radii = np.ceil(3.0 * np.sqrt(max(lambda1, lambda2)))
+    intermediate_matrix = (mid * mid - det).view(-1, 1)
+    intermediate_matrix = torch.cat([intermediate_matrix, torch.ones_like(intermediate_matrix) * .1], dim=1)
+
+    max_values = torch.max(intermediate_matrix, dim=1).values
+    lambda1 = mid + torch.sqrt(max_values)
+    lambda2 = mid - torch.sqrt(max_values)
+    # now we have the eigenvalues, we can calculate the max radius
+    max_radius = torch.ceil(2.5 * torch.sqrt(torch.max(lambda1, lambda2)))
     
-    return my_radii
+    return max_radius
 
 
 def load_cuda(cuda_src, cpp_src, funcs, opt=True, verbose=False):
