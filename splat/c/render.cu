@@ -68,6 +68,7 @@ __global__ void render_tile(
             inverse_covariance_2d[i * 4 + 3]);
         
         float alpha = opacity[i] * strength;
+        float alpha = min(.99f, alpha);
         float test_weight = total_weight * (1 - alpha);
         if (test_weight < 0.001f)
         {

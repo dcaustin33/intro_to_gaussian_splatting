@@ -22,7 +22,7 @@ from splat.utils import (
     read_camera_file,
     read_image_file,
     compute_radius,
-    compute_inverse_covariance,
+    compute_inverted_covariance,
 )
 
 
@@ -111,14 +111,9 @@ class GaussianScene(nn.Module):
             image_idx=image_idx, points=points, covariance_3d=covariance_3d
         )
 
-        # I am not sure what we are exactly doing here
-        determinant = (
-            covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
-            - covariance_2d[:, 0, 1] ** 2
-        )
-        inverse_covariance = compute_inverse_covariance(covariance_2d, determinant)
+        inverse_covariance = compute_inverted_covariance(covariance_2d)
         # now we compute the radius
-        radius = compute_radius(covariance_2d, determinant)
+        radius = compute_radius(covariance_2d)
 
         min_x = torch.floor(points_xy[:, 0] - radius)
         min_y = torch.floor(points_xy[:, 1] - radius)
@@ -176,7 +171,7 @@ class GaussianScene(nn.Module):
                 point_mean=point,
                 inverse_covariance=inverse_covariance[point_idx],
             )
-            alpha = weight * torch.sigmoid(opacities[point_idx])
+            alpha = min(.99, weight * torch.sigmoid(opacities[point_idx]))
             test_weight = total_weight * (1 - alpha)
             if test_weight < min_weight:
                 return pixel_color
@@ -215,23 +210,20 @@ class GaussianScene(nn.Module):
     def render_image(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
         """For each tile have to check if the point is in the tile"""
         preprocessed_scene = self.preprocess(image_idx)
-        height = self.images[image_idx].height
-        width = self.images[image_idx].width
-
-        height = 3200
-        width = 3200
+        height = int(self.images[image_idx].height.item())
+        width = int(self.images[image_idx].width.item())
 
         image = torch.zeros((width, height, 3))
 
-        for x_min in tqdm(range(2000, width, tile_size)):
-            x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
-                preprocessed_scene.max_x >= x_min
+        for x_min in tqdm(range(0, width, tile_size)):
+            x_in_tile = (x_min >= preprocessed_scene.min_x) & (
+                x_min + tile_size <= preprocessed_scene.max_x
             )
             if x_in_tile.sum() == 0:
                 continue
             for y_min in range(0, height, tile_size):
-                y_in_tile = (preprocessed_scene.min_y <= y_min + tile_size) & (
-                    preprocessed_scene.max_y >= y_min
+                y_in_tile = (y_min >= preprocessed_scene.min_y) & (
+                    y_min + tile_size <= preprocessed_scene.max_y
                 )
                 points_in_tile = x_in_tile & y_in_tile
                 if points_in_tile.sum() == 0:

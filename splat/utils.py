@@ -149,6 +149,10 @@ def focal2fov(focal: torch.Tensor, pixels: torch.Tensor) -> torch.Tensor:
 
 
 def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    """This is the function to focus on as opposed to v2 below
+
+    This take the rotation matrix and translation vector and returns the
+    """
     Rt = torch.zeros((4, 4))
 
     Rt[:3, :3] = R
@@ -175,10 +179,18 @@ def getProjectionMatrix(
     znear: torch.Tensor, zfar: torch.Tensor, fovX: torch.Tensor, fovY: torch.Tensor
 ) -> torch.Tensor:
     """
+    znear: near plane set by user
+    zfar: far plane set by user
+    fovX: field of view in x, calculated from the focal length
+    fovY: field of view in y, calculated from the focal length
+
+
     This is from the original repo.
     It uses the view to adjust the coordinates to the actual pixel dimensions
     It still retains the z componenet.
-    Not 100% sure the difference between this and the intrinsic matrix
+    This is the perspective projection matrix.
+    When used in conjunction wih the world2view matrix, it will transform the points
+    to the pixel coordinates.
     """
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
@@ -311,12 +323,26 @@ def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=
         extra_cflags=["-std=c++14"],
     )
 
-def compute_inverse_covariance(
-    covariance_2d: torch.Tensor, determinant: torch.Tensor
-) -> torch.Tensor:
+
+def compute_inverted_covariance(covariance_2d: torch.Tensor) -> torch.Tensor:
     """
     Compute the inverse covariance matrix
+
+    For a 2x2 matrix
+    given as
+    [[a, b],
+     [c, d]]
+     the determinant is ad - bc
+
+    To get the inverse matrix reshuffle the terms like so
+    and multiply by 1/determinant
+    [[d, -b],
+     [-c, a]] * (1 / determinant)
     """
+    determinant = (
+        covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
+        - covariance_2d[:, 0, 1] * covariance_2d[:, 1, 0]
+    )
     determinant = torch.clamp(determinant, min=1e-3)
     inverse_covariance = torch.zeros_like(covariance_2d)
     inverse_covariance[:, 0, 0] = covariance_2d[:, 1, 1] / determinant
@@ -325,8 +351,9 @@ def compute_inverse_covariance(
     inverse_covariance[:, 1, 0] = -covariance_2d[:, 1, 0] / determinant
     return inverse_covariance
 
+
 def compute_radius(
-    covariance_2d: torch.Tensor, determinant: torch.Tensor
+    covariance_2d: torch.Tensor,
 ) -> torch.Tensor:
     """
     Compute the radius of the 2D covariance matrix
@@ -334,6 +361,16 @@ def compute_radius(
     return torch.sqrt(
         covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
     )
+    
+def compute_extent_and_radius(covariance_2d: torch.Tensor):
+    mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
+    det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
+    lambda1 = mid + np.sqrt(max(0.1, mid * mid - det))
+    lambda2 = mid - np.sqrt(max(0.1, mid * mid - det))
+    my_radii = np.ceil(3.0 * np.sqrt(max(lambda1, lambda2)))
+    
+    return my_radii
+
 
 def load_cuda(cuda_src, cpp_src, funcs, opt=True, verbose=False):
     return load_inline(
@@ -342,5 +379,5 @@ def load_cuda(cuda_src, cpp_src, funcs, opt=True, verbose=False):
         cuda_sources=[cuda_src],
         functions=funcs,
         extra_cuda_cflags=["-O1"] if opt else [],
-        verbose=verbose
+        verbose=verbose,
     )
