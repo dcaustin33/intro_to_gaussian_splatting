@@ -213,7 +213,7 @@ class GaussianScene(nn.Module):
 
         image = torch.zeros((width, height, 3))
 
-        for x_min in tqdm(range(2000, width - tile_size, tile_size)):
+        for x_min in tqdm(range(0, width - tile_size, tile_size)):
             x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
                 preprocessed_scene.max_x >= x_min
             )
