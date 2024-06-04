@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Tuple
 
 import torch
 
@@ -10,7 +10,6 @@ from splat.utils import (
     get_intrinsic_matrix,
     getProjectionMatrix,
     getWorld2View,
-    getWorld2View2,
     in_view_frustum,
     ndc2Pix,
 )
@@ -22,7 +21,7 @@ class GaussianImage(torch.nn.Module):
         Takes in the camera paramters and the image parameters and creates a
         GaussianImage object that can be used to project points onto the image plane
         """
-        
+
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

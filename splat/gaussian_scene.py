@@ -1,13 +1,9 @@
-import math
-import os
 import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Tuple
 
-import pycolmap
 import torch
 from torch import nn
-from torch.utils.cpp_extension import load_inline
 from tqdm import tqdm
 
 from splat.gaussians import Gaussians
@@ -19,10 +15,10 @@ from splat.utils import (
     compute_gaussian_weight,
     compute_inverted_covariance,
     in_view_frustum,
+    load_cuda,
     ndc2Pix,
     read_camera_file,
     read_image_file,
-    load_cuda,
 )
 
 
@@ -103,11 +99,6 @@ class GaussianScene(nn.Module):
             image_idx=image_idx, points=points, covariance_3d=covariance_3d
         )
 
-        # I am not sure what we are exactly doing here
-        determinant = (
-            covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
-            - covariance_2d[:, 0, 1] ** 2
-        )
         inverse_covariance = compute_inverted_covariance(covariance_2d)
         # now we compute the radius
         # radius = self.compute_radius(covariance_2d, determinant)
@@ -195,9 +186,9 @@ class GaussianScene(nn.Module):
         for pixel_x in range(x_min, x_min + tile_size):
             for pixel_y in range(y_min, y_min + tile_size):
                 tile[pixel_x % tile_size, pixel_y % tile_size] = self.render_pixel(
-                    pixel_coords=torch.Tensor(
-                        [pixel_x, pixel_y]
-                    ).view(1, 2).to(points_in_tile_mean.device),
+                    pixel_coords=torch.Tensor([pixel_x, pixel_y])
+                    .view(1, 2)
+                    .to(points_in_tile_mean.device),
                     points_in_tile_mean=points_in_tile_mean,
                     colors=colors,
                     opacities=opacities,
@@ -268,9 +259,7 @@ class GaussianScene(nn.Module):
 
         return load_cuda(cuda_src, cpp_src, ["render_image"], opt=True, verbose=True)
 
-    def render_image_cuda(
-        self, image_idx: int, tile_size: int = 16
-    ) -> torch.Tensor:
+    def render_image_cuda(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
         preprocessed_scene = self.preprocess(image_idx)
         height = self.images[image_idx].height
         width = self.images[image_idx].width

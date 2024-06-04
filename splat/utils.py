@@ -1,6 +1,6 @@
 import math
 import os
-from typing import Dict, Tuple
+from typing import Dict
 
 import numpy as np
 import torch
@@ -52,17 +52,25 @@ def get_extrinsic_matrix(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     return Rt
 
 
-def getWorld2View(R: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+def project_points(
+    points: torch.Tensor, intrinsic_matrix: torch.Tensor, extrinsic_matrix: torch.Tensor
+) -> torch.Tensor:
     """
-    We should translate the points to camera coordinates,
-    however we will never use the 4th dimension it seems like so leaving for now
-    """
-    Rt = torch.zeros((4, 4))
-    Rt[:3, :3] = R.t()
-    Rt[:3, 3] = t
-    Rt[3, 3] = 1.0
-    return Rt
+    Project the points to the image plane
 
+    Args:
+        points: Nx3 tensor
+        intrinsic_matrix: 3x4 tensor
+        extrinsic_matrix: 4x4 tensor
+    """
+    homogeneous = torch.ones((4, points.shape[0]), device=points.device)
+    homogeneous[:3, :] = points
+    projected_to_camera_perspective = extrinsic_matrix @ homogeneous
+    projected_to_image_plane = intrinsic_matrix @ projected_to_camera_perspective
+    projected_points = projected_to_image_plane[:2, :] / projected_to_image_plane[2, :].unsqueeze(1)
+    x = projected_points[0, :]
+    y = projected_points[1, :]
+    return x, y
 
 def extract_gaussian_weight(
     pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor
@@ -313,17 +321,6 @@ def compute_gaussian_weight(
     return torch.exp(power).item()
 
 
-def load_cuda(cuda_src: str, cpp_src: str, funcs: list[str], opt=False, verbose=False):
-    return load_inline(
-        name="render_image",
-        cpp_sources=[cpp_src],
-        cuda_sources=[cuda_src],
-        functions=["render_image"],
-        extra_cuda_cflags=["-std=c++14"],
-        extra_cflags=["-std=c++14"],
-    )
-
-
 def compute_inverted_covariance(covariance_2d: torch.Tensor) -> torch.Tensor:
     """
     Compute the inverse covariance matrix
@@ -352,9 +349,7 @@ def compute_inverted_covariance(covariance_2d: torch.Tensor) -> torch.Tensor:
     return inverse_covariance
 
 
-def compute_radius(
-    covariance_2d: torch.Tensor
-) -> torch.Tensor:
+def compute_radius(covariance_2d: torch.Tensor) -> torch.Tensor:
     determinant = (
         covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1]
         - covariance_2d[:, 0, 1] * covariance_2d[:, 1, 0]
@@ -365,19 +360,22 @@ def compute_radius(
     max_lambda = torch.max(lambda1, lambda2)
     radius = torch.ceil(2.5 * torch.sqrt(max_lambda))
     return radius
-    
+
+
 def compute_extent_and_radius(covariance_2d: torch.Tensor):
     mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
     det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
     intermediate_matrix = (mid * mid - det).view(-1, 1)
-    intermediate_matrix = torch.cat([intermediate_matrix, torch.ones_like(intermediate_matrix) * .1], dim=1)
+    intermediate_matrix = torch.cat(
+        [intermediate_matrix, torch.ones_like(intermediate_matrix) * 0.1], dim=1
+    )
 
     max_values = torch.max(intermediate_matrix, dim=1).values
     lambda1 = mid + torch.sqrt(max_values)
     lambda2 = mid - torch.sqrt(max_values)
     # now we have the eigenvalues, we can calculate the max radius
     max_radius = torch.ceil(2.5 * torch.sqrt(torch.max(lambda1, lambda2)))
-    
+
     return max_radius
 
 

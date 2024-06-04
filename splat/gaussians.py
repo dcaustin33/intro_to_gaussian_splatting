@@ -22,7 +22,7 @@ class Gaussians(nn.Module):
         )
         self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.001
         # for now we do not use initialize scale
-        # however from the paper the scale is initialized using 
+        # however from the paper the scale is initialized using
         # mean of the three smallest nonzero distances for each point
         # self.initialize_scale()
 
