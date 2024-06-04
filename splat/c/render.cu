@@ -43,9 +43,7 @@ __global__ void render_tile(
         return;
     }
 
-    printf("pixel_x: %d, pixel_y: %d\n", pixel_x, pixel_y);
-
-    float total_weight = 0.0f;
+    float total_weight = 1.0f;
     float3 color = {0.0f, 0.0f, 0.0f};
 
     for (int i = 0; i < num_points; i++)
@@ -54,8 +52,9 @@ __global__ void render_tile(
         float point_y = point_means[i * 2 + 1];
 
         // checks to make sure we are within the bounding box
-        if (point_x < min_x[pixel_x] || point_x > max_x[pixel_x] ||
-            point_y < min_y[pixel_y] || point_y > max_y[pixel_y])
+        bool x_check = pixel_x >= min_x[i] && pixel_x <= max_x[i];
+        bool y_check = pixel_y >= min_y[i] && pixel_y <= max_y[i];
+        if (!x_check || !y_check)
         {
             continue;
         }
@@ -67,17 +66,17 @@ __global__ void render_tile(
             inverse_covariance_2d[i * 4],
             inverse_covariance_2d[i * 4 + 1],
             inverse_covariance_2d[i * 4 + 3]);
-
+        
         float alpha = opacity[i] * strength;
+        float alpha = min(.99f, alpha);
         float test_weight = total_weight * (1 - alpha);
         if (test_weight < 0.001f)
         {
             break;
         }
-
-        color.x += alpha * point_colors[i * 3];
-        color.y += alpha * point_colors[i * 3 + 1];
-        color.z += alpha * point_colors[i * 3 + 2];
+        color.x += total_weight * alpha * point_colors[i * 3];
+        color.y += total_weight * alpha * point_colors[i * 3 + 1];
+        color.z += total_weight * alpha * point_colors[i * 3 + 2];
         total_weight = test_weight;
     }
 
