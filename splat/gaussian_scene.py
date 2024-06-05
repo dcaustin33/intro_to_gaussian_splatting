@@ -56,15 +56,17 @@ class GaussianScene(nn.Module):
         """
         Get the 2D covariance matrix for each gaussian
         """
-        return compute_2d_covariance(
+        output = compute_2d_covariance(
             points=points,
-            external_matrix=self.images[image_idx].world2view.to(points.device),
+            extrinsic_matrix=self.images[image_idx].world2view.to(points.device),
             covariance_3d=covariance_3d,
             tan_fovX=self.images[image_idx].tan_fovX.to(points.device),
             tan_fovY=self.images[image_idx].tan_fovY.to(points.device),
             focal_x=self.images[image_idx].f_x.to(points.device),
             focal_y=self.images[image_idx].f_y.to(points.device),
         )
+        import pdb; pdb.set_trace()
+        return output
 
     def preprocess(self, image_idx: int, tile_size: int = 16) -> None:
         """Preprocesses before rendering begins"""
@@ -72,6 +74,7 @@ class GaussianScene(nn.Module):
             points=self.gaussians.points,
             view_matrix=self.images[image_idx].world2view,
         )
+        import pdb; pdb.set_trace()
         covariance_3d = self.gaussians.get_3d_covariance_matrix()[in_view]
 
         points = self.gaussians.points[in_view]

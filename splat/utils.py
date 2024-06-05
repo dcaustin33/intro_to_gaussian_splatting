@@ -67,10 +67,13 @@ def project_points(
     homogeneous[:3, :] = points
     projected_to_camera_perspective = extrinsic_matrix @ homogeneous
     projected_to_image_plane = intrinsic_matrix @ projected_to_camera_perspective
-    projected_points = projected_to_image_plane[:2, :] / projected_to_image_plane[2, :].unsqueeze(1)
+    projected_points = projected_to_image_plane[:2, :] / projected_to_image_plane[
+        2, :
+    ].unsqueeze(1)
     x = projected_points[0, :]
     y = projected_points[1, :]
     return x, y
+
 
 def extract_gaussian_weight(
     pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor
@@ -222,6 +225,47 @@ def getProjectionMatrix(
     return P
 
 
+def getIntinsicMatrix(
+    focal_x: torch.Tensor,
+    focal_y: torch.Tensor,
+    height: torch.Tensor,
+    width: torch.Tensor,
+    znear: torch.Tensor = torch.Tensor([100.0]),
+    zfar: torch.Tensor = torch.Tensor([0.001]),
+) -> torch.Tensor:
+    """
+    Gets the internal perspective projection matrix
+    
+    znear: near plane set by user
+    zfar: far plane set by user
+    fovX: field of view in x, calculated from the focal length
+    fovY: field of view in y, calculated from the focal length
+    """
+    fovX = torch.Tensor([2 * math.atan(width / (2 * focal_x))])
+    fovY = torch.Tensor([2 * math.atan(height / (2 * focal_y))])
+    
+    tanHalfFovY = math.tan((fovY / 2))
+    tanHalfFovX = math.tan((fovX / 2))
+
+    top = tanHalfFovY * znear
+    bottom = -top
+    right = tanHalfFovX * znear
+    left = -right
+
+    P = torch.zeros(4, 4)
+
+    z_sign = 1.0
+
+    P[0, 0] = 2.0 * znear / (right - left)
+    P[1, 1] = 2.0 * znear / (top - bottom)
+    P[0, 2] = (right + left) / (right - left)
+    P[1, 2] = (top + bottom) / (top - bottom)
+    P[3, 2] = z_sign
+    P[2, 2] = z_sign * zfar / (zfar - znear)
+    P[2, 3] = -(zfar * znear) / (zfar - znear)
+    return P
+
+
 def read_camera_file(colmap_path: str) -> Dict:
     binary_path = os.path.join(colmap_path, "cameras.bin")
     text_path = os.path.join(colmap_path, "cameras.txt")
@@ -275,7 +319,7 @@ def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
 
 def compute_2d_covariance(
     points: torch.Tensor,
-    external_matrix: torch.Tensor,
+    extrinsic_matrix: torch.Tensor,
     covariance_3d: torch.Tensor,
     tan_fovY: torch.Tensor,
     tan_fovX: torch.Tensor,
@@ -288,7 +332,7 @@ def compute_2d_covariance(
     points = torch.cat(
         [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
     )
-    points_transformed = (points @ W)[:, :3]
+    points_transformed = (points @ extrinsic_matrix)[:, :3]
     limx = 1.3 * tan_fovX
     limy = 1.3 * tan_fovY
     x = points_transformed[:, 0] / points_transformed[:, 2]
@@ -305,7 +349,7 @@ def compute_2d_covariance(
 
     # transpose as originally set up for perspective projection
     # so we now transform back
-    W = W[:3, :3].T
+    W = extrinsic_matrix[:3, :3].T
 
     return (J @ W @ covariance_3d @ W.T @ J.transpose(1, 2))[:, :2, :2]
 
