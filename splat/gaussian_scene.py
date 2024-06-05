@@ -58,7 +58,7 @@ class GaussianScene(nn.Module):
         """
         return compute_2d_covariance(
             points=points,
-            W=self.images[image_idx].world2view.to(points.device),
+            external_matrix=self.images[image_idx].world2view.to(points.device),
             covariance_3d=covariance_3d,
             tan_fovX=self.images[image_idx].tan_fovX.to(points.device),
             tan_fovY=self.images[image_idx].tan_fovY.to(points.device),

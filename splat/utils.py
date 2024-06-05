@@ -275,7 +275,7 @@ def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
 
 def compute_2d_covariance(
     points: torch.Tensor,
-    W: torch.Tensor,
+    external_matrix: torch.Tensor,
     covariance_3d: torch.Tensor,
     tan_fovY: torch.Tensor,
     tan_fovX: torch.Tensor,
@@ -284,8 +284,6 @@ def compute_2d_covariance(
 ) -> torch.Tensor:
     """
     Compute the 2D covariance matrix for each gaussian
-
-    W is in the uW format so transpose for final calc
     """
     points = torch.cat(
         [points, torch.ones(points.shape[0], 1, device=points.device)], dim=1
@@ -305,6 +303,8 @@ def compute_2d_covariance(
     J[:, 1, 1] = focal_y / z
     J[:, 1, 2] = -(focal_y * y) / (z**2)
 
+    # transpose as originally set up for perspective projection
+    # so we now transform back
     W = W[:3, :3].T
 
     return (J @ W @ covariance_3d @ W.T @ J.transpose(1, 2))[:, :2, :2]
@@ -374,7 +374,7 @@ def compute_extent_and_radius(covariance_2d: torch.Tensor):
     lambda1 = mid + torch.sqrt(max_values)
     lambda2 = mid - torch.sqrt(max_values)
     # now we have the eigenvalues, we can calculate the max radius
-    max_radius = torch.ceil(2.5 * torch.sqrt(torch.max(lambda1, lambda2)))
+    max_radius = torch.ceil(3.0 * torch.sqrt(torch.max(lambda1, lambda2)))
 
     return max_radius
 
