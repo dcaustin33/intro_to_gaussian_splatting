@@ -65,16 +65,14 @@ class GaussianScene(nn.Module):
             focal_x=self.images[image_idx].f_x.to(points.device),
             focal_y=self.images[image_idx].f_y.to(points.device),
         )
-        import pdb; pdb.set_trace()
         return output
 
-    def preprocess(self, image_idx: int, tile_size: int = 16) -> None:
+    def preprocess(self, image_idx: int) -> None:
         """Preprocesses before rendering begins"""
         in_view = in_view_frustum(
             points=self.gaussians.points,
             view_matrix=self.images[image_idx].world2view,
         )
-        import pdb; pdb.set_trace()
         covariance_3d = self.gaussians.get_3d_covariance_matrix()[in_view]
 
         points = self.gaussians.points[in_view]
