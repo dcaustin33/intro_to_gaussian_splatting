@@ -235,7 +235,7 @@ def getIntinsicMatrix(
 ) -> torch.Tensor:
     """
     Gets the internal perspective projection matrix
-    
+
     znear: near plane set by user
     zfar: far plane set by user
     fovX: field of view in x, calculated from the focal length
@@ -243,7 +243,7 @@ def getIntinsicMatrix(
     """
     fovX = torch.Tensor([2 * math.atan(width / (2 * focal_x))])
     fovY = torch.Tensor([2 * math.atan(height / (2 * focal_y))])
-    
+
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
 
