@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import torch
 from torch import nn
@@ -12,25 +13,40 @@ class Gaussians(nn.Module):
         points: torch.Tensor,
         colors: torch.Tensor,
         model_path: str = ".",
+        scales: Optional[torch.Tensor] = None,
+        quaternions: Optional[torch.Tensor] = None,
+        opacity: Optional[torch.Tensor] = None,
+        requires_grad: bool = False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.point_cloud_path = os.path.join(model_path, "point_cloud.ply")
         storePly(self.point_cloud_path, points, colors)
-        self.points = points.clone().requires_grad_(True).to(self.device).float()
+        self.points = points.clone().requires_grad_(requires_grad).to(self.device).float()
         self.colors = (
-            (colors / 256).clone().requires_grad_(True).to(self.device).float()
+            (colors / 256).clone().requires_grad_(requires_grad).to(self.device).float()
         )
-        self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.001
+        if scales is None:
+            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.005
+        else:
+            self.scales = scales.clone().requires_grad_(requires_grad).to(self.device).float()
+
         # for now we do not use initialize scale
         # however from the paper the scale is initialized using
         # mean of the three smallest nonzero distances for each point
         # self.initialize_scale()
+        
+        if quaternions is None:
+            self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
+            self.quaternions[:, 0] = 1.0
+        else:
+            self.quaternions = quaternions.clone().requires_grad_(requires_grad).to(self.device)
 
-        self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
-        self.quaternions[:, 0] = 1.0
-        self.opacity = inverse_sigmoid(
-            0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
-        ).to(self.device)
+        if opacity is None:
+            self.opacity = inverse_sigmoid(
+                0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
+            ).to(self.device)
+        else:
+            self.opacity = opacity.clone().requires_grad_(requires_grad).to(self.device)
 
     def initialize_scale(
         self,
