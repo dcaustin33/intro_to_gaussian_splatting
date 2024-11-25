@@ -155,10 +155,10 @@ class GaussianScene(nn.Module):
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)
         points_xy = points_ndc[:, :2]
         points_xy[:, 0] = ndc2Pix(
-            points_xy[:, 0], self.images[image_idx].width.to(points_xy.device)
+            points_xy[:, 0], width.to(points_xy.device)
         )
         points_xy[:, 1] = ndc2Pix(
-            points_xy[:, 1], self.images[image_idx].height.to(points_xy.device)
+            points_xy[:, 1], height.to(points_xy.device)
         )
 
         covariance_2d = self.get_2d_covariance(
