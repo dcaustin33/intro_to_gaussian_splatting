@@ -104,7 +104,7 @@ def invert_covariance_2d(
     """Covariance will ve a nX2X2 tensor"""
     cov = covariance_2d + epsilon
     determinant = cov[:, 0, 0] * cov[:, 1, 1] - cov[:, 0, 1] * cov[:, 1, 0]
-    inverted_cov = torch.zeros_like(cov)
+    inverted_cov = torch.zeros_like(cov).to(cov.device)
     multiplier = 1.0 / determinant
     inverted_cov[:, 0, 0] = cov[:, 1, 1] * multiplier
     inverted_cov[:, 0, 1] = -cov[:, 0, 1] * multiplier
@@ -122,7 +122,6 @@ def compute_radius_from_covariance_2d(
     """
     mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
     det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
-    lambda1_intermediate = mid**2 - det
     lambda1 = mid + torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
     lambda2 = mid - torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
     max_lambda = torch.max(lambda1, lambda2)

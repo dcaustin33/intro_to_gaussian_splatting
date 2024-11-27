@@ -22,7 +22,7 @@ class GaussianScene2(nn.Module):
     def __init__(self, gaussians: Gaussians):
         super().__init__()
         self.gaussians = gaussians
-        self.device = "cpu"
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def compute_2d_covariance(
         self,
@@ -42,7 +42,7 @@ class GaussianScene2(nn.Module):
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
 
-        j = torch.zeros((points_camera_space.shape[0], 2, 3))
+        j = torch.zeros((points_camera_space.shape[0], 2, 3)).to(self.device)
         j[:, 0, 0] = focal_x / points_camera_space[:, 2]
         j[:, 0, 2] = (focal_x * points_camera_space[:, 0]) / (
             points_camera_space[:, 2] ** 2
@@ -92,14 +92,14 @@ class GaussianScene2(nn.Module):
         max_tile_x = math.ceil(width / tile_size)
         max_tile_y = math.ceil(height / tile_size)
 
-        top_left_x = torch.floor((points_pixel_space[:, 0] - radii) / tile_size).int()
-        top_left_y = torch.floor((points_pixel_space[:, 1] - radii) / tile_size).int()
+        top_left_x = torch.floor((points_pixel_space[:, 0] - radii) / tile_size).int().to(self.device)
+        top_left_y = torch.floor((points_pixel_space[:, 1] - radii) / tile_size).int().to(self.device)
         bottom_right_x = torch.floor(
             (points_pixel_space[:, 0] + radii) / tile_size
-        ).int()
+        ).int().to(self.device)
         bottom_right_y = torch.floor(
             (points_pixel_space[:, 1] + radii) / tile_size
-        ).int()
+        ).int().to(self.device)
 
         # now we get the spans we should not worry about
         truth_array = (
@@ -145,15 +145,18 @@ class GaussianScene2(nn.Module):
         tan_fovY = math.tan(fovY / 2)
 
         points_homogeneous = torch.cat(
-            [self.gaussians.points, torch.ones(self.gaussians.points.shape[0], 1)],
+            [
+                self.gaussians.points.to(self.device),
+                torch.ones(self.gaussians.points.shape[0], 1).to(self.device),
+            ],
             dim=1,
         )  # Nx4
 
-        covariance3d = self.gaussians.get_3d_covariance_matrix()
+        covariance3d = self.gaussians.get_3d_covariance_matrix().to(self.device)
         covariance2d, points_camera_space = self.compute_2d_covariance(
             points_homogeneous,
             covariance3d,
-            extrinsic_matrix,
+            extrinsic_matrix.to(self.device),
             tan_fovX,
             tan_fovY,
             focal_x,
@@ -161,12 +164,12 @@ class GaussianScene2(nn.Module):
         )
         # Nx4 - using the openGL convention
         points_in_view_bool_array = self.filter_in_view(points_camera_space)
-        points_ndc = points_camera_space @ intrinsic_matrix
+        points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
-        color = self.gaussians.colors[points_in_view_bool_array]  # nx3
-        opacity = self.gaussians.opacity[points_in_view_bool_array]
+        color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
+        opacity = self.gaussians.opacity[points_in_view_bool_array].to(self.device)
 
         inverted_covariance_2d = invert_covariance_2d(covariance2d)
         radius = compute_radius_from_covariance_2d(covariance2d)
@@ -342,7 +345,6 @@ class GaussianScene2(nn.Module):
                     t_values[x, y] = output[1]
         return image
 
-
     def render_cuda(
         self,
         preprocessed_gaussians: PreprocessedGaussian,
@@ -376,8 +378,18 @@ class GaussianScene2(nn.Module):
         )
 
         image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
-        t_values = torch.ones((width, height), device=self.device)
-        done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
 
-        image = 
+        image = render_tile_cuda(
+            tile_size,
+            preprocessed_gaussians.means_3d.contiguous(),
+            preprocessed_gaussians.color.contiguous(),
+            preprocessed_gaussians.opacity.contiguous(),
+            preprocessed_gaussians.inverted_covariance_2d.contiguous(),
+            image.contiguous(),
+            starting_indices.contiguous(),
+            array[:, 0:2].contiguous(),
+            height,
+            width,
+            len(preprocessed_gaussians.tiles_touched),
+        )
         return image

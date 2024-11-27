@@ -170,7 +170,7 @@ __global__ void render_tile_kernel(
 }
 
 
-torch::Tensor render_tile(int tile_size,
+torch::Tensor render_tile_cuda(int tile_size,
                     torch::Tensor point_means,
                     torch::Tensor point_colors,
                     torch::Tensor point_opacities,
