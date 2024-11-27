@@ -15,6 +15,7 @@ from splat.render_engine.utils import (
     invert_covariance_2d,
 )
 from splat.utils import extract_gaussian_weight, ndc2Pix
+from splat.c import render_tile_cuda
 
 
 class GaussianScene2(nn.Module):
@@ -378,38 +379,5 @@ class GaussianScene2(nn.Module):
         t_values = torch.ones((width, height), device=self.device)
         done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
 
-        for idx in tqdm.tqdm(range(len(array))):
-            # you render for all the tiles the gaussian will touch
-            gaussian_idx = array[idx, 3].int().item()
-            tile_x = array[idx, 0]
-            tile_y = array[idx, 1]
-
-            starting_image_x = (tile_x * tile_size).int().item()
-            starting_image_y = (tile_y * tile_size).int().item()
-
-            for x in range(starting_image_x, starting_image_x + tile_size):
-                for y in range(starting_image_y, starting_image_y + tile_size):
-                    # we should have a range here
-                    if x >= width or y >= height:
-                        continue
-                    if x < 0 or y < 0:
-                        continue
-                    if done[x, y]:
-                        continue
-                    output = self.render_pixel(
-                        x_value=x,
-                        y_value=y,
-                        mean_2d=preprocessed_gaussians.means_3d[gaussian_idx, :2],
-                        covariance_2d=preprocessed_gaussians.covariance_2d[
-                            gaussian_idx
-                        ],
-                        opacity=preprocessed_gaussians.opacity[gaussian_idx],
-                        color=preprocessed_gaussians.color[gaussian_idx],
-                        current_T=t_values[x, y],
-                    )
-                    if output is None:
-                        done[x, y] = True
-                        continue
-                    image[x, y] += output[0]
-                    t_values[x, y] = output[1]
+        image = 
         return image

@@ -11,6 +11,11 @@ ext_modules = [
         ["splat/c/test.cpp"],
         extra_compile_args=["-O3"],
     ),
+    Pybind11Extension(
+        "c.render_tile_cuda",
+        ["splat/c/render_engine.cu"],
+        extra_compile_args=["-O3"],
+    ),
 ]
 
 setup(
