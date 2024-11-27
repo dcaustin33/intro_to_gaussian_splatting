@@ -1,0 +1,18 @@
+BasedOnStyle: Google
+IndentWidth: 4              # Matches Python's default 4-space indentation
+TabWidth: 4
+UseTab: Never               # Always use spaces, like Python
+ColumnLimit: 0              # No line wrapping, similar to Python's relaxed style
+BreakBeforeBraces: Custom   # Open braces on new lines for functions and control statements
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: true
+  IndentBraces: false
+  SplitEmptyFunction: true
+AllowShortIfStatementsOnASingleLine: false # Keep blocks consistent
+SpacesInParentheses: false   # No extra spaces inside parentheses, like Python
+SpacesInSquareBrackets: false
+SpaceAfterCStyleCast: true   # Space after casts for readability
+PointerAlignment: Left       # Keeps pointers aligned with the variable type
+DerivePointerAlignment: false
+SortIncludes: false          # Don't reorder includes (like Python import statements)

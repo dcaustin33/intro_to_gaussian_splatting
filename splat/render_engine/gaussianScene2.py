@@ -1,4 +1,5 @@
 import math
+import time
 from typing import Tuple
 
 import numpy as np
@@ -73,27 +74,6 @@ class GaussianScene2(nn.Module):
         # truth_array = truth_array & (points_ndc[:, 1] < 1.3)
         # truth_array = truth_array & (points_ndc[:, 1] > -1.3)
         return truth_array
-
-    # def compute_tiles_touched(
-    #     self, points_pixel_space: torch.Tensor, radii: torch.Tensor, tile_size: int, height: int, width: int
-    # ) -> torch.Tensor:
-    #     """This computes how many tiles each point touches
-
-    #     The calculation is figuring out how many tiles the x spans
-    #     Then how many the y spans then multiplying them together
-    #     """
-    #     top_left_x = torch.clamp((points_pixel_space[:, 0] - radii) / tile_size, min=0, max=(width+1)/tile_size).int()
-    #     top_left_y = torch.clamp((points_pixel_space[:, 1] - radii) / tile_size, min=0, max=(height+1)/tile_size).int()
-    #     bottom_right_x = torch.clamp((points_pixel_space[:, 0] + radii) / tile_size, min=0, max=(width+1)/tile_size).int()
-    #     bottom_right_y = torch.clamp((points_pixel_space[:, 1] + radii) / tile_size, min=0, max=(height+1)/tile_size).int()
-
-    #     span_x = torch.clamp((bottom_right_x + 1) - top_left_x, min=1)
-    #     span_y = torch.clamp((bottom_right_y + 1) - top_left_y, min=1)
-    #     return (
-    #         span_x * span_y,
-    #         [top_left_x, top_left_y],
-    #         [bottom_right_x, bottom_right_y],
-    #     )
 
     def compute_tiles_touched(
         self,
@@ -251,6 +231,23 @@ class GaussianScene2(nn.Module):
             assert start_idx == old_starting_idx + num_tiles
         return array
 
+    def get_start_idx(
+        self, array: torch.Tensor, total_x_tiles: int, total_y_tiles: int
+    ) -> int:
+        """
+        Function to get where the start of the idx for the tile is
+        """
+        # create a total_tiles_x x total_tiles_y array where the input is the part in the array where it starts
+        # then we can just take the argmax of that array to get the start idx
+        array_map = torch.ones((total_x_tiles, total_y_tiles), device=array.device) * -1
+        for idx in range(len(array)):
+            tile_x = array[idx, 0]
+            tile_y = array[idx, 1]
+            array_map[tile_x, tile_y] = (
+                idx if array_map[tile_x, tile_y] == -1 else array_map[tile_x, tile_y]
+            )
+        return torch.argmax(array_map, dim=0)
+
     def render_pixel(
         self,
         x_value: int,
@@ -300,12 +297,86 @@ class GaussianScene2(nn.Module):
             array[:, 0] + array[:, 1] * 1e-4 + array[:, 2] * 1e-8
         )
         array = array[sorted_indices]
+        starting_indices = self.get_start_idx(
+            array, math.ceil(width / tile_size), math.ceil(height / tile_size)
+        )
 
         image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
         t_values = torch.ones((width, height), device=self.device)
         done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
 
-        import time
+        for idx in tqdm.tqdm(range(len(array))):
+            # you render for all the tiles the gaussian will touch
+            gaussian_idx = array[idx, 3].int().item()
+            tile_x = array[idx, 0]
+            tile_y = array[idx, 1]
+
+            starting_image_x = (tile_x * tile_size).int().item()
+            starting_image_y = (tile_y * tile_size).int().item()
+
+            for x in range(starting_image_x, starting_image_x + tile_size):
+                for y in range(starting_image_y, starting_image_y + tile_size):
+                    # we should have a range here
+                    if x >= width or y >= height:
+                        continue
+                    if x < 0 or y < 0:
+                        continue
+                    if done[x, y]:
+                        continue
+                    output = self.render_pixel(
+                        x_value=x,
+                        y_value=y,
+                        mean_2d=preprocessed_gaussians.means_3d[gaussian_idx, :2],
+                        covariance_2d=preprocessed_gaussians.covariance_2d[
+                            gaussian_idx
+                        ],
+                        opacity=preprocessed_gaussians.opacity[gaussian_idx],
+                        color=preprocessed_gaussians.color[gaussian_idx],
+                        current_T=t_values[x, y],
+                    )
+                    if output is None:
+                        done[x, y] = True
+                        continue
+                    image[x, y] += output[0]
+                    t_values[x, y] = output[1]
+        return image
+
+
+    def render_cuda(
+        self,
+        preprocessed_gaussians: PreprocessedGaussian,
+        height: int,
+        width: int,
+        tile_size: int = 16,
+    ) -> None:
+        """
+        Rendering function - it will do all the steps to render
+        the scene similar to the kernels the original authors use
+        """
+        print("starting sum")
+        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
+        print("ending sum")
+
+        array = torch.zeros(
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float64
+        )
+        # the first 32 bits will be the x_index of the tile
+        # the next 32 bits will be the y_index of the tile
+        # the last 32 bits will be the z depth of the gaussian
+
+        array = self.create_key_to_tile_map(array, preprocessed_gaussians)
+        # sort the array by the x and y coordinates
+        sorted_indices = torch.argsort(
+            array[:, 0] + array[:, 1] * 1e-4 + array[:, 2] * 1e-8
+        )
+        array = array[sorted_indices]
+        starting_indices = self.get_start_idx(
+            array, math.ceil(width / tile_size), math.ceil(height / tile_size)
+        )
+
+        image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
+        t_values = torch.ones((width, height), device=self.device)
+        done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
