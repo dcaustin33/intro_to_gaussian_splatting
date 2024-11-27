@@ -1,6 +1,6 @@
 import math
 import time
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -89,8 +89,8 @@ class GaussianScene2(nn.Module):
         The calculation is figuring out how many tiles the x spans
         Then how many the y spans then multiplying them together
         """
-        max_tile_x = math.ceil(width / tile_size)
-        max_tile_y = math.ceil(height / tile_size)
+        max_tile_x = math.ceil(width / tile_size) - 1
+        max_tile_y = math.ceil(height / tile_size) - 1
 
         top_left_x = torch.floor((points_pixel_space[:, 0] - radii) / tile_size).int().to(self.device)
         top_left_y = torch.floor((points_pixel_space[:, 1] - radii) / tile_size).int().to(self.device)
@@ -163,9 +163,9 @@ class GaussianScene2(nn.Module):
             focal_y,
         )
         # Nx4 - using the openGL convention
-        points_in_view_bool_array = self.filter_in_view(points_camera_space)
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
+        points_in_view_bool_array = self.filter_in_view(points_ndc)
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
@@ -239,7 +239,9 @@ class GaussianScene2(nn.Module):
         self, array: torch.Tensor, total_x_tiles: int, total_y_tiles: int
     ) -> int:
         """
-        Function to get where the start of the idx for the tile is
+        Function to get where the start of the idx for the tile is.
+        
+        Apparently we can use torch.where and torch.unique_consecutive for this
         """
         # create a total_tiles_x x total_tiles_y array where the input is the part in the array where it starts
         # then we can just take the argmax of that array to get the start idx
@@ -262,7 +264,7 @@ class GaussianScene2(nn.Module):
         color: torch.Tensor,
         current_T: float,
         min_weight: float = 0.00001,
-    ) -> torch.Tensor:
+    ) -> Optional[torch.Tensor]:
         """Uses alpha blending to render a pixel"""
         gaussian_strength = extract_gaussian_weight(
             mean_2d, torch.Tensor([x_value, y_value]), covariance_2d
@@ -307,7 +309,7 @@ class GaussianScene2(nn.Module):
 
         image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
         t_values = torch.ones((width, height), device=self.device)
-        done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
+        done = torch.zeros((width, height), device=self.device, dtype=torch.bool)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
