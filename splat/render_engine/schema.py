@@ -1,10 +1,9 @@
 from typing import List
 import torch
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel
 
 
-@dataclass
-class ClippingPlanes:
+class ClippingPlanes(BaseModel):
     near: float
     far: float
     right: float
@@ -12,13 +11,11 @@ class ClippingPlanes:
     top: float
     bottom: float
 
-@dataclass
-class Fov:
+class Fov(BaseModel):
     fovX: float
     fovY: float
-    
-@dataclass
-class PreprocessedGaussian:
+
+class PreprocessedGaussian(BaseModel):
     means_3d: torch.Tensor
     covariance_2d: torch.Tensor
     inverted_covariance_2d: torch.Tensor
@@ -28,3 +25,8 @@ class PreprocessedGaussian:
     bottom_right: List[torch.Tensor]
     color: torch.Tensor
     opacity: torch.Tensor
+
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
+

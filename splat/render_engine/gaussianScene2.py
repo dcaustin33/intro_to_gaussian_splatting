@@ -4,6 +4,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+import tqdm
 
 from splat.gaussians import Gaussians
 from splat.render_engine.schema import PreprocessedGaussian
@@ -12,13 +13,14 @@ from splat.render_engine.utils import (
     compute_radius_from_covariance_2d,
     invert_covariance_2d,
 )
-from splat.utils import ndc2Pix, extract_gaussian_weight
+from splat.utils import extract_gaussian_weight, ndc2Pix
 
 
 class GaussianScene2(nn.Module):
     def __init__(self, gaussians: Gaussians):
         super().__init__()
         self.gaussians = gaussians
+        self.device = "cpu"
 
     def compute_2d_covariance(
         self,
@@ -32,7 +34,6 @@ class GaussianScene2(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Make sure the extrinsic matrix has the translation in the last row"""
 
-        # I AM NOT SURE IF THIS IS RIGHT - I THINK THIS IS THE VIEW MATRIX
         points_camera_space = points_homogeneous @ extrinsic_matrix
         x = points_camera_space[:, 0] / points_camera_space[:, 2]
         y = points_camera_space[:, 1] / points_camera_space[:, 2]
@@ -60,29 +61,77 @@ class GaussianScene2(nn.Module):
             @ extrinsic_matrix[:3, :3]
             @ j.transpose(1, 2)
         )
-        return covariance2d
+        return covariance2d, points_camera_space
 
     def filter_in_view(
         self, points_ndc: torch.Tensor, znear: float = 0.2
     ) -> torch.Tensor:
         """Filters those points that are too close to the camera"""
-        return points_ndc[:, 2] > znear
+        truth_array = points_ndc[:, 2] > znear
+        # truth_array = truth_array & (points_ndc[:, 0] < 1.3)
+        # truth_array = truth_array & (points_ndc[:, 0] > -1.3)
+        # truth_array = truth_array & (points_ndc[:, 1] < 1.3)
+        # truth_array = truth_array & (points_ndc[:, 1] > -1.3)
+        return truth_array
+
+    # def compute_tiles_touched(
+    #     self, points_pixel_space: torch.Tensor, radii: torch.Tensor, tile_size: int, height: int, width: int
+    # ) -> torch.Tensor:
+    #     """This computes how many tiles each point touches
+
+    #     The calculation is figuring out how many tiles the x spans
+    #     Then how many the y spans then multiplying them together
+    #     """
+    #     top_left_x = torch.clamp((points_pixel_space[:, 0] - radii) / tile_size, min=0, max=(width+1)/tile_size).int()
+    #     top_left_y = torch.clamp((points_pixel_space[:, 1] - radii) / tile_size, min=0, max=(height+1)/tile_size).int()
+    #     bottom_right_x = torch.clamp((points_pixel_space[:, 0] + radii) / tile_size, min=0, max=(width+1)/tile_size).int()
+    #     bottom_right_y = torch.clamp((points_pixel_space[:, 1] + radii) / tile_size, min=0, max=(height+1)/tile_size).int()
+
+    #     span_x = torch.clamp((bottom_right_x + 1) - top_left_x, min=1)
+    #     span_y = torch.clamp((bottom_right_y + 1) - top_left_y, min=1)
+    #     return (
+    #         span_x * span_y,
+    #         [top_left_x, top_left_y],
+    #         [bottom_right_x, bottom_right_y],
+    #     )
 
     def compute_tiles_touched(
-        self, points_pixel_space: torch.Tensor, radii: torch.Tensor, tile_size: int
+        self,
+        points_pixel_space: torch.Tensor,
+        radii: torch.Tensor,
+        tile_size: int,
+        height: int,
+        width: int,
     ) -> torch.Tensor:
         """This computes how many tiles each point touches
 
         The calculation is figuring out how many tiles the x spans
         Then how many the y spans then multiplying them together
         """
-        top_left_x = max((points_pixel_space - radii) / tile_size, 0)
-        top_left_y = max((points_pixel_space - radii) / tile_size, 0)
-        bottom_right_x = min((points_pixel_space + radii) / tile_size, tile_size - 1)
-        bottom_right_y = min((points_pixel_space + radii) / tile_size, tile_size - 1)
+        max_tile_x = math.ceil(width / tile_size)
+        max_tile_y = math.ceil(height / tile_size)
 
-        span_x = max(bottom_right_x - top_left_x, 1)
-        span_y = max(bottom_right_y - top_left_y, 1)
+        top_left_x = torch.floor((points_pixel_space[:, 0] - radii) / tile_size).int()
+        top_left_y = torch.floor((points_pixel_space[:, 1] - radii) / tile_size).int()
+        bottom_right_x = torch.floor(
+            (points_pixel_space[:, 0] + radii) / tile_size
+        ).int()
+        bottom_right_y = torch.floor(
+            (points_pixel_space[:, 1] + radii) / tile_size
+        ).int()
+
+        # now we get the spans we should not worry about
+        truth_array = (
+            (top_left_x > max_tile_x)
+            | (top_left_y > max_tile_y)
+            | (bottom_right_x < 0)
+            | (bottom_right_y < 0)
+        )
+        span_x = torch.clamp((bottom_right_x + 1) - top_left_x, min=1)
+        span_y = torch.clamp((bottom_right_y + 1) - top_left_y, min=1)
+        span_x[truth_array] = 0
+        span_y[truth_array] = 0
+
         return (
             span_x * span_y,
             [top_left_x, top_left_y],
@@ -103,8 +152,10 @@ class GaussianScene2(nn.Module):
         Code to preprocess the Gaussians.
         We end with the means in pixel space, the 2D covariance, and the radius'
 
-        Intrinsic matrix should we the opengl with the -1 on the 3rd column
+        Intrinsic matrix should we the opengl with the z sign on the 3rd column (zero indexed)
         (ie transposed from the orginal scratchapixel)
+
+        Extrinsic matrix should already be transposed
         """
         fovX = compute_fov_from_focal(focal_x, width)
         fovY = compute_fov_from_focal(focal_y, height)
@@ -117,7 +168,7 @@ class GaussianScene2(nn.Module):
             dim=1,
         )  # Nx4
 
-        covariance3d = self.gaussians.covariance_3d
+        covariance3d = self.gaussians.get_3d_covariance_matrix()
         covariance2d, points_camera_space = self.compute_2d_covariance(
             points_homogeneous,
             covariance3d,
@@ -128,19 +179,23 @@ class GaussianScene2(nn.Module):
             focal_y,
         )
         # Nx4 - using the openGL convention
+        points_in_view_bool_array = self.filter_in_view(points_camera_space)
         points_ndc = points_camera_space @ intrinsic_matrix
-        points_ndc = points_ndc[:, :3] / points_ndc[:, 3:4]  # Nx3
-        points_in_view_bool_array = self.filter_in_view(points_ndc)
+        points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
-        color = self.gaussians.colors[points_in_view_bool_array] # nx3
+        color = self.gaussians.colors[points_in_view_bool_array]  # nx3
         opacity = self.gaussians.opacity[points_in_view_bool_array]
 
         inverted_covariance_2d = invert_covariance_2d(covariance2d)
         radius = compute_radius_from_covariance_2d(covariance2d)
 
+        points_pixel_coords_x = ndc2Pix(points_ndc[:, 0], dimension=width)
+        points_pixel_coords_y = ndc2Pix(points_ndc[:, 1], dimension=height)
+        points_ndc[:, 0] = points_pixel_coords_x
+        points_ndc[:, 1] = points_pixel_coords_y
         tiles_touched, top_left, bottom_right = self.compute_tiles_touched(
-            radius, tile_size
+            points_ndc[:, 0:2], radius, tile_size, height, width
         )
 
         return PreprocessedGaussian(
@@ -152,7 +207,7 @@ class GaussianScene2(nn.Module):
             top_left=top_left,
             bottom_right=bottom_right,
             color=color,
-            opacity=opacity
+            opacity=opacity,
         )
 
     def create_key_to_tile_map(
@@ -162,7 +217,7 @@ class GaussianScene2(nn.Module):
     ) -> torch.Tensor:
         """
         Create a map from the tile to the gaussians that touch it.
-        
+
         Array is a nx2 tensor where n is the cumulative sum of the tiles touched.
         Every entry for each gaussian should correspond to a tile touched.
         In this function we are denoting the tiles touched by the gaussian
@@ -173,100 +228,117 @@ class GaussianScene2(nn.Module):
             num_tiles = preprocessed_gaussians.tiles_touched[idx]
             if num_tiles == 0:
                 continue
-                
+            old_starting_idx = start_idx
+
             # Get the tile coordinates for this gaussian
-            top_left = preprocessed_gaussians.top_left[idx]
-            bottom_right = preprocessed_gaussians.bottom_right[idx]
+            top_left = [
+                preprocessed_gaussians.top_left[0][idx],
+                preprocessed_gaussians.top_left[1][idx],
+            ]
+            bottom_right = [
+                preprocessed_gaussians.bottom_right[0][idx],
+                preprocessed_gaussians.bottom_right[1][idx],
+            ]
             z_depth = preprocessed_gaussians.means_3d[idx, 2]
-            
+
             # Fill in array entries for each tile this gaussian touches
             for x in range(int(top_left[0]), int(bottom_right[0]) + 1):
                 for y in range(int(top_left[1]), int(bottom_right[1]) + 1):
-                    array[start_idx] = torch.tensor([x, y, z_depth, idx], device=array.device)
+                    array[start_idx] = torch.tensor(
+                        [x, y, z_depth, idx], device=array.device
+                    )
                     start_idx += 1
-                    
+            assert start_idx == old_starting_idx + num_tiles
         return array
-            
 
     def render_pixel(
         self,
         x_value: int,
-        y_value:int,
+        y_value: int,
         mean_2d: torch.Tensor,
         covariance_2d: torch.Tensor,
         opacity: torch.Tensor,
         color: torch.Tensor,
         current_T: float,
-        min_weight: float = .01
+        min_weight: float = 0.00001,
     ) -> torch.Tensor:
         """Uses alpha blending to render a pixel"""
         gaussian_strength = extract_gaussian_weight(
-            mean_2d, 
-            torch.Tensor([x_value, y_value]),
-            covariance_2d
+            mean_2d, torch.Tensor([x_value, y_value]), covariance_2d
         )
         alpha = gaussian_strength * torch.sigmoid(opacity)
-        test_t = current_T * (1-alpha)
+        test_t = current_T * (1 - alpha)
         if test_t < min_weight:
             return
-        return color * current_T * alpha, test_t 
+        return color * current_T * alpha, test_t
 
     def render(
-        self, preprocessed_gaussians: PreprocessedGaussian, height: int, width: int, tile_size: int=16
+        self,
+        preprocessed_gaussians: PreprocessedGaussian,
+        height: int,
+        width: int,
+        tile_size: int = 16,
     ) -> None:
         """
         Rendering function - it will do all the steps to render
         the scene similar to the kernels the original authors use
         """
-
+        print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
-        array = torch.zeros((prefix_sum[-1], 4), device=self.device, dtype=torch.float64)
+        print("ending sum")
+
+        array = torch.zeros(
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float64
+        )
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
         # the last 32 bits will be the z depth of the gaussian
-        # the last 32 bits will be the gaussia idx
 
-        array = self.create_key_to_tile_map(
-            array, preprocessed_gaussians
-        )
-
+        array = self.create_key_to_tile_map(array, preprocessed_gaussians)
         # sort the array by the x and y coordinates
-        sorted_indices = torch.argsort(array[:, 0] + array[:, 1] * 1e-4 + array[:, 2] * 1e-8)
+        sorted_indices = torch.argsort(
+            array[:, 0] + array[:, 1] * 1e-4 + array[:, 2] * 1e-8
+        )
         array = array[sorted_indices]
-        
-        covariance_2d = preprocessed_gaussians.covariance_2d[sorted_indices]
-        
-        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
-        t_values = torch.ones((height, width), device=self.device)
-        done = torch.zeros((height, width), device=self.device, dtype=torch.float32)
-        
-        for idx in range(len(array)):
+
+        image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
+        t_values = torch.ones((width, height), device=self.device)
+        done = torch.zeros((width, height), device=self.device, dtype=torch.float32)
+
+        import time
+
+        for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
-            gaussian_idx = array[idx, 3]
+            gaussian_idx = array[idx, 3].int().item()
             tile_x = array[idx, 0]
             tile_y = array[idx, 1]
-            
-            starting_image_x = tile_x * tile_size
-            starting_image_y = tile_y * tile_size
-            
+
+            starting_image_x = (tile_x * tile_size).int().item()
+            starting_image_y = (tile_y * tile_size).int().item()
+
             for x in range(starting_image_x, starting_image_x + tile_size):
                 for y in range(starting_image_y, starting_image_y + tile_size):
                     # we should have a range here
+                    if x >= width or y >= height:
+                        continue
+                    if x < 0 or y < 0:
+                        continue
                     if done[x, y]:
                         continue
                     output = self.render_pixel(
                         x_value=x,
                         y_value=y,
                         mean_2d=preprocessed_gaussians.means_3d[gaussian_idx, :2],
-                        covariance_2d=covariance_2d,
+                        covariance_2d=preprocessed_gaussians.covariance_2d[
+                            gaussian_idx
+                        ],
                         opacity=preprocessed_gaussians.opacity[gaussian_idx],
                         color=preprocessed_gaussians.color[gaussian_idx],
-                        current_T=t_values[x, y]
+                        current_T=t_values[x, y],
                     )
                     if output is None:
                         done[x, y] = True
                         continue
                     image[x, y] += output[0]
                     t_values[x, y] = output[1]
-        
-        
+        return image

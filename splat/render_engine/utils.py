@@ -122,8 +122,9 @@ def compute_radius_from_covariance_2d(
     """
     mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
     det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
-    lambda1 = mid + torch.sqrt(max(0.1, mid**2 - det))
-    lambda2 = mid - torch.sqrt(max(0.1, mid**2 - det))
+    lambda1_intermediate = mid**2 - det
+    lambda1 = mid + torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
+    lambda2 = mid - torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
     max_lambda = torch.max(lambda1, lambda2)
     return std_dev_multiplier * torch.sqrt(max_lambda)
 

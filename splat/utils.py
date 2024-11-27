@@ -230,8 +230,8 @@ def getIntinsicMatrix(
     focal_y: torch.Tensor,
     height: torch.Tensor,
     width: torch.Tensor,
-    znear: torch.Tensor = torch.Tensor([100.0]),
-    zfar: torch.Tensor = torch.Tensor([0.001]),
+    zfar: torch.Tensor = torch.Tensor([100.0]),
+    znear: torch.Tensor = torch.Tensor([0.001]),
 ) -> torch.Tensor:
     """
     Gets the internal perspective projection matrix

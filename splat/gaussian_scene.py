@@ -134,6 +134,9 @@ class GaussianScene(nn.Module):
             height = self.images[image_idx].height.to(self.gaussians.points.device)
             width = self.images[image_idx].width.to(self.gaussians.points.device)
             
+        print(world2view)
+        print(self.images[image_idx].projection_matrix)
+        print(full_proj_transform)
         in_view = in_view_frustum(
             points=self.gaussians.points,
             view_matrix=world2view,
@@ -306,6 +309,7 @@ class GaussianScene(nn.Module):
         total_render_time = 0
         
         pbar = tqdm(range(0, width - tile_size, tile_size))
+        total_points_in_tile = 0
         for x_min in pbar:
             x_filter_start = time.time()
             x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
@@ -335,6 +339,7 @@ class GaussianScene(nn.Module):
                 inverse_covariance_in_tile = preprocessed_scene.inverse_covariance_2d[
                     points_in_tile
                 ]
+                total_points_in_tile += points_in_tile.sum()
                 tile_prep_time = time.time() - tile_prep_start
                 total_tile_time += tile_prep_time
                 
@@ -363,7 +368,7 @@ class GaussianScene(nn.Module):
         print(f"Filter time: {total_filter_time:.2f}s ({100*total_filter_time/total_time:.1f}%)")
         print(f"Tile prep time: {total_tile_time:.2f}s ({100*total_tile_time/total_time:.1f}%)")
         print(f"Render time: {total_render_time:.2f}s ({100*total_render_time/total_time:.1f}%)")
-        
+        print(f"Total points in tiles: {total_points_in_tile}")
         return image
 
     def compile_cuda_ext(
