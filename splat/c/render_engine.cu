@@ -206,5 +206,5 @@ torch::Tensor render_tile_cuda(int tile_size,
 }
 
 PYBIND11_MODULE(render_tile_cuda, m) {
-    m.def("render_tile", &render_tile, "Render a tile of the image");
+    m.def("render_tile", &render_tile_cuda, "Render a tile of the image");
 }

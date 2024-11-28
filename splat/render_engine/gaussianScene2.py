@@ -70,10 +70,10 @@ class GaussianScene2(nn.Module):
     ) -> torch.Tensor:
         """Filters those points that are too close to the camera"""
         truth_array = points_ndc[:, 2] > znear
-        # truth_array = truth_array & (points_ndc[:, 0] < 1.3)
-        # truth_array = truth_array & (points_ndc[:, 0] > -1.3)
-        # truth_array = truth_array & (points_ndc[:, 1] < 1.3)
-        # truth_array = truth_array & (points_ndc[:, 1] > -1.3)
+        truth_array = truth_array & (points_ndc[:, 0] < 1.3)
+        truth_array = truth_array & (points_ndc[:, 0] > -1.3)
+        truth_array = truth_array & (points_ndc[:, 1] < 1.3)
+        truth_array = truth_array & (points_ndc[:, 1] > -1.3)
         return truth_array
 
     def compute_tiles_touched(
@@ -92,14 +92,26 @@ class GaussianScene2(nn.Module):
         max_tile_x = math.ceil(width / tile_size) - 1
         max_tile_y = math.ceil(height / tile_size) - 1
 
-        top_left_x = torch.floor((points_pixel_space[:, 0] - radii) / tile_size).int().to(self.device)
-        top_left_y = torch.floor((points_pixel_space[:, 1] - radii) / tile_size).int().to(self.device)
-        bottom_right_x = torch.floor(
-            (points_pixel_space[:, 0] + radii) / tile_size
-        ).int().to(self.device)
-        bottom_right_y = torch.floor(
-            (points_pixel_space[:, 1] + radii) / tile_size
-        ).int().to(self.device)
+        top_left_x = (
+            torch.floor((points_pixel_space[:, 0] - radii) / tile_size)
+            .int()
+            .to(self.device)
+        )
+        top_left_y = (
+            torch.floor((points_pixel_space[:, 1] - radii) / tile_size)
+            .int()
+            .to(self.device)
+        )
+        bottom_right_x = (
+            torch.floor((points_pixel_space[:, 0] + radii) / tile_size)
+            .int()
+            .to(self.device)
+        )
+        bottom_right_y = (
+            torch.floor((points_pixel_space[:, 1] + radii) / tile_size)
+            .int()
+            .to(self.device)
+        )
 
         # now we get the spans we should not worry about
         truth_array = (
@@ -115,8 +127,14 @@ class GaussianScene2(nn.Module):
 
         return (
             span_x * span_y,
-            [top_left_x, top_left_y],
-            [bottom_right_x, bottom_right_y],
+            [
+                top_left_x.clamp(max=max_tile_x, min=0),
+                top_left_y.clamp(max=max_tile_y, min=0),
+            ],
+            [
+                bottom_right_x.clamp(max=max_tile_x, min=0),
+                bottom_right_y.clamp(max=max_tile_y, min=0),
+            ],
         )
 
     def preprocess(
@@ -240,15 +258,15 @@ class GaussianScene2(nn.Module):
     ) -> int:
         """
         Function to get where the start of the idx for the tile is.
-        
+
         Apparently we can use torch.where and torch.unique_consecutive for this
         """
         # create a total_tiles_x x total_tiles_y array where the input is the part in the array where it starts
         # then we can just take the argmax of that array to get the start idx
         array_map = torch.ones((total_x_tiles, total_y_tiles), device=array.device) * -1
         for idx in range(len(array)):
-            tile_x = array[idx, 0]
-            tile_y = array[idx, 1]
+            tile_x = array[idx, 0].int().item()
+            tile_y = array[idx, 1].int().item()
             array_map[tile_x, tile_y] = (
                 idx if array_map[tile_x, tile_y] == -1 else array_map[tile_x, tile_y]
             )
@@ -362,8 +380,11 @@ class GaussianScene2(nn.Module):
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
         print("ending sum")
 
+        print(prefix_sum[-1], preprocessed_gaussians.tiles_touched.shape[0])
+        print(math.ceil(width / tile_size), math.ceil(height / tile_size))
+
         array = torch.zeros(
-            (prefix_sum[-1], 4), device=self.device, dtype=torch.float64
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float16
         )
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
