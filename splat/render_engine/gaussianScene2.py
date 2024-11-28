@@ -15,7 +15,9 @@ from splat.render_engine.utils import (
     invert_covariance_2d,
 )
 from splat.utils import extract_gaussian_weight, ndc2Pix
-from splat.c import render_tile_cuda
+
+if torch.cuda.is_available():
+    from splat.c import render_tile_cuda
 
 
 class GaussianScene2(nn.Module):
@@ -92,26 +94,10 @@ class GaussianScene2(nn.Module):
         max_tile_x = math.ceil(width / tile_size) - 1
         max_tile_y = math.ceil(height / tile_size) - 1
 
-        top_left_x = (
-            torch.floor((points_pixel_space[:, 0] - radii) / tile_size)
-            .int()
-            .to(self.device)
-        )
-        top_left_y = (
-            torch.floor((points_pixel_space[:, 1] - radii) / tile_size)
-            .int()
-            .to(self.device)
-        )
-        bottom_right_x = (
-            torch.floor((points_pixel_space[:, 0] + radii) / tile_size)
-            .int()
-            .to(self.device)
-        )
-        bottom_right_y = (
-            torch.floor((points_pixel_space[:, 1] + radii) / tile_size)
-            .int()
-            .to(self.device)
-        )
+        top_left_x = torch.clamp(((points_pixel_space[:, 0] - radii) / tile_size).int(), max=max_tile_x, min=0)
+        top_left_y = torch.clamp(((points_pixel_space[:, 1] - radii) / tile_size).int(), max=max_tile_y, min=0)
+        bottom_right_x = torch.clamp(((points_pixel_space[:, 0] + radii) / tile_size).int(), max=max_tile_x, min=0)
+        bottom_right_y = torch.clamp(((points_pixel_space[:, 1] + radii) / tile_size).int(), max=max_tile_y, min=0)
 
         # now we get the spans we should not worry about
         truth_array = (
@@ -250,7 +236,8 @@ class GaussianScene2(nn.Module):
                         [x, y, z_depth, idx], device=array.device
                     )
                     start_idx += 1
-            assert start_idx == old_starting_idx + num_tiles
+            if start_idx != old_starting_idx + num_tiles:
+                import pdb; pdb.set_trace()
         return array
 
     def get_start_idx(
@@ -309,7 +296,7 @@ class GaussianScene2(nn.Module):
         print("ending sum")
 
         array = torch.zeros(
-            (prefix_sum[-1], 4), device=self.device, dtype=torch.float64
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
         )
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
