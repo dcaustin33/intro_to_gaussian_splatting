@@ -391,6 +391,7 @@ class GaussianScene2(nn.Module):
         print("Starting render")
 
         tile_indices = array[:, 0:2].int()
+        array_indices = array[:, 3].int()
         starting_indices = starting_indices.int()
 
         image = render_tile_cuda.render_tile_cuda(
@@ -402,6 +403,7 @@ class GaussianScene2(nn.Module):
             image.contiguous(),
             starting_indices.contiguous(),
             tile_indices.contiguous(),
+            array_indices.contiguous(),
             height,
             width,
             len(preprocessed_gaussians.tiles_touched),
