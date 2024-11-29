@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-torch = "2.2.2"
+torch = "2.4.1"
 numpy = "^1.26.4"
 pycolmap = "^0.6.1"
 pydantic = "^2.7.1"

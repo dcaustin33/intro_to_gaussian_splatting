@@ -7,6 +7,13 @@
 #include <pybind11/pybind11.h>
 
 #define TILE_SIZE 16
+#define CUDA_CHECK(call) { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        printf("CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+        throw std::runtime_error(cudaGetErrorString(err)); \
+    } \
+}
 
 namespace py = pybind11;
 
@@ -84,6 +91,9 @@ __global__ void render_tile_kernel(
     int correct_tile_idx = tile_x + tile_y * num_x_tiles;
     int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
     shared_done_indicator[thread_idx] = false;
+    if (starting_tile_indices[correct_tile_idx] == -1) {
+        return;
+    }
 
     while (true)
     {
@@ -170,17 +180,18 @@ __global__ void render_tile_kernel(
 }
 
 
-torch::Tensor render_tile_cuda(int tile_size,
-                    torch::Tensor point_means,
-                    torch::Tensor point_colors,
-                    torch::Tensor point_opacities,
-                    torch::Tensor inverse_covariance_2d,
-                    torch::Tensor image,
-                    torch::Tensor starting_tile_indices,
-                    torch::Tensor tile_idx,
-                    int image_height,
-                    int image_width,
-                    int num_points)
+torch::Tensor render_tile_cuda(
+    int tile_size,
+    torch::Tensor point_means,
+    torch::Tensor point_colors,
+    torch::Tensor point_opacities,
+    torch::Tensor inverse_covariance_2d,
+    torch::Tensor image,
+    torch::Tensor starting_tile_indices,
+    torch::Tensor tile_idx,
+    int image_height,
+    int image_width,
+    int num_points)
 {
     if (tile_size != TILE_SIZE) {
         throw std::runtime_error("Tile size must be 16 or TILE_SIZE in c code must change");
@@ -189,6 +200,7 @@ torch::Tensor render_tile_cuda(int tile_size,
     int grid_size_x = (image_width + tile_size - 1) / tile_size;
     int grid_size_y = (image_height + tile_size - 1) / tile_size;
     dim3 grid_size(grid_size_x, grid_size_y);
+    
     render_tile_kernel<<<grid_size, block_size>>>(
         tile_size,
         point_means.data_ptr<float>(),
@@ -201,10 +213,13 @@ torch::Tensor render_tile_cuda(int tile_size,
         image_height,
         image_width,
         num_points);
-    cudaDeviceSynchronize();
+    
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
     return image;
 }
 
 PYBIND11_MODULE(render_tile_cuda, m) {
-    m.def("render_tile", &render_tile_cuda, "Render a tile of the image");
+    m.def("render_tile_cuda", &render_tile_cuda, "Render a tile of the image");
 }

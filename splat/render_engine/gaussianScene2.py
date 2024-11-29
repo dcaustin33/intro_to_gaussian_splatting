@@ -236,8 +236,7 @@ class GaussianScene2(nn.Module):
                         [x, y, z_depth, idx], device=array.device
                     )
                     start_idx += 1
-            if start_idx != old_starting_idx + num_tiles:
-                import pdb; pdb.set_trace()
+            assert start_idx == old_starting_idx + num_tiles
         return array
 
     def get_start_idx(
@@ -257,7 +256,7 @@ class GaussianScene2(nn.Module):
             array_map[tile_x, tile_y] = (
                 idx if array_map[tile_x, tile_y] == -1 else array_map[tile_x, tile_y]
             )
-        return torch.argmax(array_map, dim=0)
+        return array_map
 
     def render_pixel(
         self,
@@ -364,6 +363,7 @@ class GaussianScene2(nn.Module):
         the scene similar to the kernels the original authors use
         """
         print("starting sum")
+        # preprocessed_gaussians.tiles_touched = preprocessed_gaussians.tiles_touched[:100]
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
         print("ending sum")
 
@@ -388,8 +388,12 @@ class GaussianScene2(nn.Module):
         )
 
         image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
+        print("Starting render")
 
-        image = render_tile_cuda(
+        tile_indices = array[:, 0:2].int()
+        starting_indices = starting_indices.int()
+
+        image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),
             preprocessed_gaussians.color.contiguous(),
@@ -397,7 +401,7 @@ class GaussianScene2(nn.Module):
             preprocessed_gaussians.inverted_covariance_2d.contiguous(),
             image.contiguous(),
             starting_indices.contiguous(),
-            array[:, 0:2].contiguous(),
+            tile_indices.contiguous(),
             height,
             width,
             len(preprocessed_gaussians.tiles_touched),

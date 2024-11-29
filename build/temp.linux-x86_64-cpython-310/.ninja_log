@@ -1,2 +1,7 @@
 # ninja log v5
 0	55222	1732758610319899602	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	6ac9e25562010ae5
+25	61358	1732895871192147637	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	aacc341527650213
+8	4378	1732895876420590830	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/test.o	5e93dfae314f00b3
+42	60007	1732896455657691224	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	aacc341527650213
+38	57443	1732913637827505020	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	aacc341527650213
+26	57260	1732914168081244286	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	aacc341527650213
