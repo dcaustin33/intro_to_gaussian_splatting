@@ -387,7 +387,8 @@ class GaussianScene2(nn.Module):
             array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
 
-        image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
+        print(image.device)
         print("Starting render")
 
         tile_indices = array[:, 0:2].int()

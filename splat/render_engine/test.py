@@ -2,6 +2,7 @@ import numpy as np
 import pycolmap
 import torch
 import torch.nn as nn
+import torchvision
 
 from splat.gaussians import Gaussians
 from splat.utils import read_images_binary, read_images_text
@@ -66,7 +67,6 @@ intrinsic_matrix = getIntinsicMatrix(focal_x, focal_y, height, width).T
 from splat.render_engine.gaussianScene2 import GaussianScene2
 
 scene = GaussianScene2(gaussians=gaussians)
-scene.device = "cpu"
 TILE_SIZE = 16
 
 
@@ -86,3 +86,8 @@ with torch.no_grad():
     output_image = scene.render_cuda(
         preprocessed_gaussians=processed_gaussians, height=height, width=width, tile_size=TILE_SIZE
     )
+
+import pdb; pdb.set_trace()
+output_image = (output_image * 255).to(torch.uint8).permute(2, 0, 1)
+# save the image
+torchvision.io.write_png(output_image.cpu().detach(), "output_image.png")

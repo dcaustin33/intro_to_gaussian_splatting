@@ -60,41 +60,41 @@ __global__ void render_tile_kernel(
     // so we need to load all the points
     // then each will have shared memory corresponding to
     // means, color, opacity, covariance, and then the tile id
-    int tile_x = blockIdx.x;
-    int tile_y = blockIdx.y;
-    int pixel_x = threadIdx.x + tile_x * tile_size;
-    int pixel_y = threadIdx.y + tile_y * tile_size;
-    bool done = false;
+    // int tile_x = blockIdx.x;
+    // int tile_y = blockIdx.y;
+    // int pixel_x = threadIdx.x + tile_x * tile_size;
+    // int pixel_y = threadIdx.y + tile_y * tile_size;
+    // bool done = false;
 
-    __shared__ float shared_point_means[TILE_SIZE * TILE_SIZE * 2];
-    __shared__ bool shared_done_indicator[TILE_SIZE * TILE_SIZE];
-    __shared__ float shared_point_colors[TILE_SIZE * TILE_SIZE * 3];
-    __shared__ float shared_point_opacities[TILE_SIZE * TILE_SIZE];
-    __shared__ float shared_inverse_covariance_2d[TILE_SIZE * TILE_SIZE * 3];
+    // __shared__ float shared_point_means[TILE_SIZE * TILE_SIZE * 2];
+    // __shared__ bool shared_done_indicator[TILE_SIZE * TILE_SIZE];
+    // __shared__ float shared_point_colors[TILE_SIZE * TILE_SIZE * 3];
+    // __shared__ float shared_point_opacities[TILE_SIZE * TILE_SIZE];
+    // __shared__ float shared_inverse_covariance_2d[TILE_SIZE * TILE_SIZE * 3];
 
-    if (pixel_x >= image_width || pixel_y >= image_height)
-    {
-        // still helps with the shared memory
-        done = true;
-    }
+    // if (pixel_x >= image_width || pixel_y >= image_height)
+    // {
+    //     // still helps with the shared memory
+    //     done = true;
+    // }
 
-    // then we have to load and if their tile does not match we indicate done in
-    // the array
+    // // then we have to load and if their tile does not match we indicate done in
+    // // the array
 
-    int thread_dim = blockDim.x * blockDim.y;
-    int num_x_tiles = (image_width + TILE_SIZE - 1) / TILE_SIZE;
-    int num_y_tiles = (image_height + TILE_SIZE - 1) / TILE_SIZE;
-    int round_counter = 0;
-    int point_idx;
-    float total_weight = 1.0f;
-    float3 color = {0.0f, 0.0f, 0.0f};
-    int num_done = 0;
-    int correct_tile_idx = tile_x + tile_y * num_x_tiles;
-    int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
-    shared_done_indicator[thread_idx] = false;
-    if (starting_tile_indices[correct_tile_idx] == -1) {
-        done = true;
-    }
+    // int thread_dim = blockDim.x * blockDim.y;
+    // int num_x_tiles = (image_width + TILE_SIZE - 1) / TILE_SIZE;
+    // int num_y_tiles = (image_height + TILE_SIZE - 1) / TILE_SIZE;
+    // int round_counter = 0;
+    // int point_idx;
+    // float total_weight = 1.0f;
+    // float3 color = {0.0f, 0.0f, 0.0f};
+    // int num_done = 0;
+    // int correct_tile_idx = tile_x + tile_y * num_x_tiles;
+    // int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
+    // shared_done_indicator[thread_idx] = false;
+    // if (starting_tile_indices[correct_tile_idx] == -1) {
+    //     done = true;
+    // }
 
     // while (true)
     // {
@@ -173,15 +173,35 @@ __global__ void render_tile_kernel(
     //         }
     //     }
     // }
+    int pixel_x = threadIdx.x + blockIdx.x * tile_size;
+    int pixel_y = threadIdx.y + blockIdx.y * tile_size;
+
     if (pixel_x < image_width && pixel_y < image_height)
     {
-        int pixel_idx = (pixel_x * image_height + pixel_y) * 3;
-        if (pixel_idx >= 0 && pixel_idx + 2 < image_width * image_height * 3) 
+        int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
+        if (pixel_idx + 2 < image_width * image_height * 3) 
         {
-            image[pixel_idx] = color.x;
-            image[pixel_idx + 1] = color.y;
-            image[pixel_idx + 2] = color.z;
+            image[pixel_idx] = 1.0f;
+            image[pixel_idx + 1] = 0.0f;
+            image[pixel_idx + 2] = 0.0f;
         }
+    }
+}
+
+__global__ void render_tile_kernel_2(
+    float* image,
+    int image_height,
+    int image_width)
+{
+    int tile_size = 16;
+    int pixel_x = threadIdx.x + blockIdx.x * tile_size;
+    int pixel_y = threadIdx.y + blockIdx.y * tile_size;
+    if (pixel_x < image_width && pixel_y < image_height)
+    {
+        int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
+        image[pixel_idx] = 1.0f;
+        image[pixel_idx + 1] = 0.0f;
+        image[pixel_idx + 2] = 0.0f;
     }
 }
 
@@ -208,6 +228,8 @@ torch::Tensor render_tile_cuda(
     int grid_size_y = (image_height + tile_size - 1) / tile_size;
     dim3 grid_size(grid_size_x, grid_size_y);
 
+    torch::Tensor image_new = torch::zeros({image_height, image_width, 3}, image.options());
+
     //print the amount of elements in image tensor
     printf("Number of elements in image tensor: %zu\n", image.numel());
     render_tile_kernel<<<grid_size, block_size>>>(
@@ -223,6 +245,10 @@ torch::Tensor render_tile_cuda(
         image_height,
         image_width,
         num_points);
+    // render_tile_kernel_2<<<grid_size, block_size>>>(
+    //     image_new.data_ptr<float>(),
+    //     image_height,
+    //     image_width);
     
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
