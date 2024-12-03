@@ -483,22 +483,3 @@ class GaussianScene2(nn.Module):
             array.shape[0],
         )
         return image
-
-
-def create_test_scene():
-    means = torch.tensor([[0, 0, 0], [1, 1, 1], [2, 2, 2]], device="cuda")
-    colors = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], device="cuda")
-    opacities = torch.tensor([1.0, 1.0, 1.0], device="cuda")
-    inverted_covariance_2d = torch.tensor(
-        [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]], device="cuda"
-    )
-    starting_indices = torch.tensor([0, -1], device="cuda")
-    array_indices = torch.tensor([0, 1, 2], device="cuda")
-    return (
-        means,
-        colors,
-        opacities,
-        inverted_covariance_2d,
-        starting_indices,
-        array_indices,
-    )

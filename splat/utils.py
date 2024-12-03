@@ -87,6 +87,7 @@ def extract_gaussian_weight(
     """
     diff = pixel - mean
     inv_covariance = torch.inverse(covariance)
+    print(inv_covariance)
     return torch.exp(-0.5 * torch.matmul(diff, torch.matmul(inv_covariance, diff.t())))
 
 

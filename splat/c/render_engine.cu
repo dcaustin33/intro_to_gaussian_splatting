@@ -46,7 +46,7 @@ namespace py = pybind11;
 
 __device__ float sigmoid(float x)
 {
-    return 1.0f / (1.0f + expf(-x));
+    return 1.0f / (1.0f + exp(-x));
 }
 
 __device__ float compute_pixel_strength(
@@ -64,7 +64,13 @@ __device__ float compute_pixel_strength(
     float power = dx * inverse_covariance_a * dx +
                   2 * dx * dy * inverse_covariance_b +
                   dy * dy * inverse_covariance_c;
-    return expf(-0.5f * power);
+    if (power < 0)
+    {
+        // according to chatgpt indicates numerical 
+        // instability as this should never occur
+        return 0.0f;
+    }
+    return exp(-0.5f * power);
 }
 
 __global__ void render_tile_kernel(
@@ -129,8 +135,6 @@ __global__ void render_tile_kernel(
 
     if (starting_tile_indices[correct_tile_idx] == -1)
     {
-        // this indicates no points in the tile
-        done = true;
         return;
     }
 
@@ -141,23 +145,18 @@ __global__ void render_tile_kernel(
         if (num_done == thread_dim)
             break;
 
-        if (starting_tile_indices[correct_tile_idx] == -1)
-        {
-            done = true;
-        }
 
         // Calculate global point index for this round
         point_idx = starting_tile_indices[correct_tile_idx] + round_counter * thread_dim;
         if (point_idx < 0)
         {
-            done = true;
+            shared_done_indicator[thread_idx] = true;
         }
 
         // Calculate global memory offset for this point
         int point_offset = point_idx + thread_idx;
         if (point_offset >= num_array_points)
         {
-            done = true;
             shared_done_indicator[thread_idx] = true;
         }
         else
@@ -165,7 +164,6 @@ __global__ void render_tile_kernel(
             int processed_gaussians_idx = array_indices[point_offset];
             if (processed_gaussians_idx >= num_points || processed_gaussians_idx < 0)
             {
-                done = true;
                 shared_done_indicator[thread_idx] = true;
             }
             else
@@ -184,7 +182,7 @@ __global__ void render_tile_kernel(
                 shared_inverse_covariance_2d[thread_idx * 3 + 2] = inverse_covariance_2d[processed_gaussians_idx * 4 + 3];
             }
 
-            if (tile_idx[point_idx + thread_idx] != correct_tile_idx)
+            if (tile_idx[point_offset] != correct_tile_idx)
             {
                 shared_done_indicator[thread_idx] = true;
             }
@@ -199,6 +197,7 @@ __global__ void render_tile_kernel(
             printf("round_counter: %d, done: %d\n", round_counter, done);
         }
 
+        int shared_done_count = 0;
         if (!done)
         {
             // render the pixel by iterating through all points until weight or
@@ -207,7 +206,7 @@ __global__ void render_tile_kernel(
             {
                 if (shared_done_indicator[i])
                 {
-                    done = true;
+                    shared_done_count++;
                     continue;
                 }
                 else
@@ -221,10 +220,9 @@ __global__ void render_tile_kernel(
                         shared_inverse_covariance_2d[i * 3 + 1],
                         shared_inverse_covariance_2d[i * 3 + 2]);
 
-                    float opacity = shared_point_opacities[i];
-                    float output = sigmoid(opacity);
-                    float output2 = weight * (1 - output);
-                    float test_T = total_weight * output2;
+                    float opacity_output = sigmoid(shared_point_opacities[i]);
+                    float alpha_value = min(0.99f, weight * (1 - opacity_output));
+                    float test_T = total_weight * alpha_value;
                     if (pixel_x == 0 && pixel_y == 0)
                     {
                         printf("test_T: %f, weight: %f, opacity: %f\n", test_T, weight, opacity);
@@ -234,18 +232,23 @@ __global__ void render_tile_kernel(
                         done = true;
                         continue;
                     }
-                    color.x += total_weight * output * shared_point_colors[i * 3];
-                    color.y += total_weight * output * shared_point_colors[i * 3 + 1];
-                    color.z += total_weight * output * shared_point_colors[i * 3 + 2];
+                    color.x += total_weight * alpha_value * shared_point_colors[i * 3];
+                    color.y += total_weight * alpha_value * shared_point_colors[i * 3 + 1];
+                    color.z += total_weight * alpha_value * shared_point_colors[i * 3 + 2];
                     total_weight = test_T;
                 }
+            }
+            if (shared_done_count == thread_dim)
+            {
+                // this will eventually cause breaking
+                done = true;
             }
         }
     }
 
     if (pixel_x < image_width && pixel_y < image_height)
     {
-        int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
+        int pixel_idx = (pixel_x * image_width + pixel_y) * 3;
         if (pixel_idx + 2 < image_width * image_height * 3)
         {
             image[pixel_idx] = color.x;
