@@ -52,8 +52,8 @@ __device__ float sigmoid(float x)
 __device__ float compute_pixel_strength(
     int pixel_x,
     int pixel_y,
-    int point_x,
-    int point_y,
+    float point_x,
+    float point_y,
     float inverse_covariance_a,
     float inverse_covariance_b,
     float inverse_covariance_c)
@@ -61,12 +61,13 @@ __device__ float compute_pixel_strength(
     // Compute the distance between the pixel and the point
     float dx = pixel_x - point_x;
     float dy = pixel_y - point_y;
+
     float power = dx * inverse_covariance_a * dx +
                   2 * dx * dy * inverse_covariance_b +
                   dy * dy * inverse_covariance_c;
     if (power < 0)
     {
-        // according to chatgpt indicates numerical 
+        // according to chatgpt indicates numerical
         // instability as this should never occur
         return 0.0f;
     }
@@ -145,7 +146,6 @@ __global__ void render_tile_kernel(
         if (num_done == thread_dim)
             break;
 
-
         // Calculate global point index for this round
         point_idx = starting_tile_indices[correct_tile_idx] + round_counter * thread_dim;
         if (point_idx < 0)
@@ -158,15 +158,13 @@ __global__ void render_tile_kernel(
         if (point_offset >= num_array_points)
         {
             shared_done_indicator[thread_idx] = true;
-        }
-        else
+        } else
         {
             int processed_gaussians_idx = array_indices[point_offset];
             if (processed_gaussians_idx >= num_points || processed_gaussians_idx < 0)
             {
                 shared_done_indicator[thread_idx] = true;
-            }
-            else
+            } else
             {
                 // Load point data into shared memory
                 shared_point_means[thread_idx * 2] = point_means[processed_gaussians_idx * 2];
@@ -208,8 +206,7 @@ __global__ void render_tile_kernel(
                 {
                     shared_done_count++;
                     continue;
-                }
-                else
+                } else
                 {
                     float weight = compute_pixel_strength(
                         pixel_x,
@@ -223,9 +220,10 @@ __global__ void render_tile_kernel(
                     float opacity_output = sigmoid(shared_point_opacities[i]);
                     float alpha_value = min(0.99f, weight * (1 - opacity_output));
                     float test_T = total_weight * alpha_value;
-                    if (pixel_x == 0 && pixel_y == 0)
+                    if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
                     {
-                        printf("test_T: %f, weight: %f, opacity: %f\n", test_T, weight, opacity);
+                        printf("test_T: %f, weight: %f, opacity: %f, mean1: %f, mean2: %f\n",
+                               test_T, weight, opacity_output, shared_point_means[i * 2], shared_point_means[i * 2 + 1]);
                     }
                     if (test_T < 0.001f)
                     {
