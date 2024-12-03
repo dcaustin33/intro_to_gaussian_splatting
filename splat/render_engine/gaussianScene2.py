@@ -289,6 +289,8 @@ class GaussianScene2(nn.Module):
         gaussian_strength = extract_gaussian_weight(
             mean_2d, torch.Tensor([x_value, y_value]), covariance_2d
         )
+        if x_value == 0 and y_value == 0:
+            print(gaussian_strength, opacity)
         alpha = gaussian_strength * torch.sigmoid(opacity)
         test_t = current_T * (1 - alpha)
         if test_t < min_weight:

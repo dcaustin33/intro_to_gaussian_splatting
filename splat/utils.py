@@ -76,7 +76,7 @@ def project_points(
 
 
 def extract_gaussian_weight(
-    pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor
+    pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor, pdb: bool = False
 ) -> torch.Tensor:
     """
     Use the covariance matrix to extract the weight of the point

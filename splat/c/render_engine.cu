@@ -108,8 +108,8 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    int target_pixel_x = 2750;
-    int target_pixel_y = 500;
+    int target_pixel_x = 0;
+    int target_pixel_y = 0;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
@@ -158,6 +158,7 @@ __global__ void render_tile_kernel(
         if (point_offset >= num_array_points)
         {
             done = true;
+            shared_done_indicator[thread_idx] = true;
         }
         else
         {
@@ -193,6 +194,11 @@ __global__ void render_tile_kernel(
         __syncthreads();
         round_counter++;
 
+        if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
+        {
+            printf("round_counter: %d, done: %d\n", round_counter, done);
+        }
+
         if (!done)
         {
             // render the pixel by iterating through all points until weight or
@@ -219,6 +225,10 @@ __global__ void render_tile_kernel(
                     float output = sigmoid(opacity);
                     float output2 = weight * (1 - output);
                     float test_T = total_weight * output2;
+                    if (pixel_x == 0 && pixel_y == 0)
+                    {
+                        printf("test_T: %f, weight: %f, opacity: %f\n", test_T, weight, opacity);
+                    }
                     if (test_T < 0.001f)
                     {
                         done = true;
