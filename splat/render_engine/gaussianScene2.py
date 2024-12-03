@@ -94,10 +94,26 @@ class GaussianScene2(nn.Module):
         max_tile_x = math.ceil(width / tile_size) - 1
         max_tile_y = math.ceil(height / tile_size) - 1
 
-        top_left_x = torch.clamp(((points_pixel_space[:, 0] - radii) / tile_size).int(), max=max_tile_x, min=0)
-        top_left_y = torch.clamp(((points_pixel_space[:, 1] - radii) / tile_size).int(), max=max_tile_y, min=0)
-        bottom_right_x = torch.clamp(((points_pixel_space[:, 0] + radii) / tile_size).int(), max=max_tile_x, min=0)
-        bottom_right_y = torch.clamp(((points_pixel_space[:, 1] + radii) / tile_size).int(), max=max_tile_y, min=0)
+        top_left_x = torch.clamp(
+            ((points_pixel_space[:, 0] - radii) / tile_size).int(),
+            max=max_tile_x,
+            min=0,
+        )
+        top_left_y = torch.clamp(
+            ((points_pixel_space[:, 1] - radii) / tile_size).int(),
+            max=max_tile_y,
+            min=0,
+        )
+        bottom_right_x = torch.clamp(
+            ((points_pixel_space[:, 0] + radii) / tile_size).int(),
+            max=max_tile_x,
+            min=0,
+        )
+        bottom_right_y = torch.clamp(
+            ((points_pixel_space[:, 1] + radii) / tile_size).int(),
+            max=max_tile_y,
+            min=0,
+        )
 
         # now we get the spans we should not worry about
         truth_array = (
@@ -279,17 +295,47 @@ class GaussianScene2(nn.Module):
             return
         return color * current_T * alpha, test_t
 
+    def create_test_preprocessed_gaussians(self) -> PreprocessedGaussian:
+        means_3d = torch.tensor([[0, 0, 1], [2, 2, 1], [3, 3, 1]], device=self.device).float()
+        colors = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], device=self.device).float()
+        opacities = torch.tensor([1.0, 1.0, 1.0], device=self.device)
+        inverted_covariance_2d = torch.tensor(
+            [[4, 2, 2, 4], [4, 2, 2, 4], [4, 2, 2, 4]], device=self.device, dtype=torch.float32
+        ).view(3, 2, 2)
+        covariance_2d = torch.inverse(inverted_covariance_2d)
+        tiles_touched = torch.tensor([1, 1, 1], device=self.device).int()
+        top_left = torch.tensor([[0, 0], [0, 0], [0, 0]], device=self.device).view(2, 3).int()
+        bottom_right = torch.tensor([[0, 0], [0, 0], [0, 0]], device=self.device).view(2, 3).int()
+        radius = torch.tensor([1, 1, 1], device=self.device)
+        return PreprocessedGaussian(
+            means_3d=means_3d,
+            covariance_2d=covariance_2d,
+            color=colors,
+            opacity=opacities,
+            inverted_covariance_2d=inverted_covariance_2d,
+            tiles_touched=tiles_touched,
+            top_left=top_left,
+            bottom_right=bottom_right,
+            radius=radius,
+        )
+
     def render(
         self,
         preprocessed_gaussians: PreprocessedGaussian,
         height: int,
         width: int,
         tile_size: int = 16,
+        test: bool = False,
     ) -> None:
         """
         Rendering function - it will do all the steps to render
         the scene similar to the kernels the original authors use
         """
+        if test:
+            preprocessed_gaussians = self.create_test_preprocessed_gaussians()
+            height = 4
+            width = 4
+
         print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
         print("ending sum")
@@ -357,11 +403,17 @@ class GaussianScene2(nn.Module):
         height: int,
         width: int,
         tile_size: int = 16,
+        test: bool = False,
     ) -> None:
         """
         Rendering function - it will do all the steps to render
         the scene similar to the kernels the original authors use
         """
+        if test:
+            preprocessed_gaussians = self.create_test_preprocessed_gaussians()
+            height = 4
+            width = 4
+
         print("starting sum")
         # preprocessed_gaussians.tiles_touched = preprocessed_gaussians.tiles_touched[:100]
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
@@ -376,13 +428,19 @@ class GaussianScene2(nn.Module):
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
         # the last 32 bits will be the z depth of the gaussian
-
         array = self.create_key_to_tile_map(array, preprocessed_gaussians)
         # sort the array by the x and y coordinates
-        sorted_indices = torch.argsort(
-            array[:, 0] + array[:, 1] * 1e-4 + array[:, 2] * 1e-8
-        )
-        array = array[sorted_indices]
+        # First, sort by 'z' coordinate
+        _, indices = torch.sort(array[:, 2], stable=True)
+        array = array[indices]
+
+        # Then, sort by 'y' coordinate
+        _, indices = torch.sort(array[:, 1], stable=True)
+        array = array[indices]
+
+        # Finally, sort by 'x' coordinate
+        _, indices = torch.sort(array[:, 0], stable=True)
+        array = array[indices]
         starting_indices = self.get_start_idx(
             array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
@@ -394,6 +452,18 @@ class GaussianScene2(nn.Module):
         tile_indices = array[:, 0:2].int()
         array_indices = array[:, 3].int()
         starting_indices = starting_indices.int()
+
+        target_pixel_x = 2750
+        target_pixel_y = 500
+        target_tile_x = target_pixel_x // tile_size
+        target_tile_y = target_pixel_y // tile_size
+
+        height = 4
+        width = 4
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
+        tile_size = 16
+        
+        import pdb; pdb.set_trace()
 
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
@@ -408,5 +478,25 @@ class GaussianScene2(nn.Module):
             height,
             width,
             len(preprocessed_gaussians.tiles_touched),
+            array.shape[0],
         )
         return image
+
+
+def create_test_scene():
+    means = torch.tensor([[0, 0, 0], [1, 1, 1], [2, 2, 2]], device="cuda")
+    colors = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], device="cuda")
+    opacities = torch.tensor([1.0, 1.0, 1.0], device="cuda")
+    inverted_covariance_2d = torch.tensor(
+        [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]], device="cuda"
+    )
+    starting_indices = torch.tensor([0, -1], device="cuda")
+    array_indices = torch.tensor([0, 1, 2], device="cuda")
+    return (
+        means,
+        colors,
+        opacities,
+        inverted_covariance_2d,
+        starting_indices,
+        array_indices,
+    )
