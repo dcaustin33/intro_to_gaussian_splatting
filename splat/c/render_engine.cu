@@ -109,27 +109,26 @@ __global__ void render_tile_kernel(
     __shared__ float shared_point_opacities[TILE_SIZE * TILE_SIZE];
     __shared__ float shared_inverse_covariance_2d[TILE_SIZE * TILE_SIZE * 3];
 
-    if (pixel_x >= image_width || pixel_y >= image_height)
+    if (pixel_x >= image_height || pixel_y >= image_width)
     {
         // still helps with the shared memory so no return
         done = true;
     }
 
     int target_pixel_x = 0;
-    int target_pixel_y = 0;
+    int target_pixel_y = 30;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
     // then we have to load and if their tile does not match we indicate done in
     // the array
     int thread_dim = blockDim.x * blockDim.y;
-    int num_y_tiles = gridDim.y;
     int round_counter = 0;
     int point_idx;
     float total_weight = 1.0f;
     float3 color = {0.0f, 0.0f, 0.0f};
     int num_done = 0;
-    int correct_tile_idx = tile_x * num_y_tiles + tile_y;
+    int correct_tile_idx = tile_x * gridDim.y + tile_y;
     int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
     // print the max thread idx
     shared_done_indicator[thread_idx] = false;
@@ -167,8 +166,8 @@ __global__ void render_tile_kernel(
             } else
             {
                 // Load point data into shared memory
-                shared_point_means[thread_idx * 2] = point_means[processed_gaussians_idx * 2];
-                shared_point_means[thread_idx * 2 + 1] = point_means[processed_gaussians_idx * 2 + 1];
+                shared_point_means[thread_idx * 2] = point_means[processed_gaussians_idx * 3];
+                shared_point_means[thread_idx * 2 + 1] = point_means[processed_gaussians_idx * 3 + 1];
                 shared_point_colors[thread_idx * 3] = point_colors[processed_gaussians_idx * 3];
                 shared_point_colors[thread_idx * 3 + 1] = point_colors[processed_gaussians_idx * 3 + 1];
                 shared_point_colors[thread_idx * 3 + 2] = point_colors[processed_gaussians_idx * 3 + 2];
@@ -179,7 +178,6 @@ __global__ void render_tile_kernel(
                 shared_inverse_covariance_2d[thread_idx * 3 + 1] = inverse_covariance_2d[processed_gaussians_idx * 4 + 1];
                 shared_inverse_covariance_2d[thread_idx * 3 + 2] = inverse_covariance_2d[processed_gaussians_idx * 4 + 3];
             }
-
             if (tile_idx[point_offset] != correct_tile_idx)
             {
                 shared_done_indicator[thread_idx] = true;
@@ -190,7 +188,7 @@ __global__ void render_tile_kernel(
         __syncthreads();
         round_counter++;
 
-        if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
+        if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
         {
             printf("round_counter: %d, done: %d\n", round_counter, done);
         }
@@ -202,13 +200,17 @@ __global__ void render_tile_kernel(
             // a done indicator is reached
             for (int i = 0; i < thread_dim; i++)
             {
+                if (target_tile_x == tile_x && target_tile_y == tile_y && thread_idx == 15)
+                {
+                    printf("shared_done_indicator[%d]: %d\n", i, shared_done_indicator[i]);
+                }
                 if (shared_done_indicator[i])
                 {
                     shared_done_count++;
                     continue;
                 } else
                 {
-                    float weight = compute_pixel_strength(
+                    float gaussian_strength = compute_pixel_strength(
                         pixel_x,
                         pixel_y,
                         shared_point_means[i * 2],
@@ -218,12 +220,15 @@ __global__ void render_tile_kernel(
                         shared_inverse_covariance_2d[i * 3 + 2]);
 
                     float opacity_output = sigmoid(shared_point_opacities[i]);
-                    float alpha_value = min(0.99f, weight * (1 - opacity_output));
-                    float test_T = total_weight * alpha_value;
-                    if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
+                    float alpha_value = min(0.99f, gaussian_strength * opacity_output);
+                    float test_T = total_weight * (1.0f - alpha_value);
+                    if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
                     {
-                        printf("test_T: %f, weight: %f, opacity: %f, mean1: %f, mean2: %f\n",
-                               test_T, weight, opacity_output, shared_point_means[i * 2], shared_point_means[i * 2 + 1]);
+                        printf("test_T: %f, gaussian_strength: %f, alpha: %f, mean1: %f, mean2: %f, color: %f, %f, %f\n",
+                               test_T, gaussian_strength, alpha_value,
+                               shared_point_means[i * 2], shared_point_means[i * 2 + 1],
+                               shared_point_colors[i * 3], shared_point_colors[i * 3 + 1], 
+                               shared_point_colors[i * 3 + 2]);
                     }
                     if (test_T < 0.001f)
                     {
@@ -244,7 +249,7 @@ __global__ void render_tile_kernel(
         }
     }
 
-    if (pixel_x < image_width && pixel_y < image_height)
+    if (pixel_x < image_height && pixel_y < image_width)
     {
         int pixel_idx = (pixel_x * image_width + pixel_y) * 3;
         if (pixel_idx + 2 < image_width * image_height * 3)

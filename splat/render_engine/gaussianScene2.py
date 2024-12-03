@@ -296,17 +296,19 @@ class GaussianScene2(nn.Module):
         return color * current_T * alpha, test_t
 
     def create_test_preprocessed_gaussians(self) -> PreprocessedGaussian:
-        means_3d = torch.tensor([[0, 0, 1], [2, 2, 1], [3, 3, 1]], device=self.device).float()
-        colors = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], device=self.device).float()
-        opacities = torch.tensor([1.0, 1.0, 1.0], device=self.device)
+        means_3d = torch.tensor([[0, 0, 1], [0, 30, 1]], device=self.device).float()
+        colors = torch.tensor([[1, 0, 0], [0, 0, 1]], device=self.device).float()
+        opacities = torch.tensor([1.0, 1.0], device=self.device)
         inverted_covariance_2d = torch.tensor(
-            [[4, 2, 2, 4], [4, 2, 2, 4], [4, 2, 2, 4]], device=self.device, dtype=torch.float32
-        ).view(3, 2, 2)
+            [[4, 2, 2, 4], [4, 2, 2, 4]], device=self.device, dtype=torch.float32
+        ).view(2, 2, 2)
         covariance_2d = torch.inverse(inverted_covariance_2d)
-        tiles_touched = torch.tensor([1, 1, 1], device=self.device).int()
-        top_left = torch.tensor([[0, 0], [0, 0], [0, 0]], device=self.device).view(2, 3).int()
-        bottom_right = torch.tensor([[0, 0], [0, 0], [0, 0]], device=self.device).view(2, 3).int()
-        radius = torch.tensor([1, 1, 1], device=self.device)
+        tiles_touched = torch.tensor([1, 1], device=self.device).int()
+        
+        # top left first entry will be the upper left x coordinate of all points
+        top_left = torch.tensor([[0, 0], [0, 1]], device=self.device)
+        bottom_right = torch.tensor([[0, 0], [0, 1]], device=self.device)
+        radius = torch.tensor([1, 1], device=self.device)
         return PreprocessedGaussian(
             means_3d=means_3d,
             covariance_2d=covariance_2d,
@@ -333,8 +335,8 @@ class GaussianScene2(nn.Module):
         """
         if test:
             preprocessed_gaussians = self.create_test_preprocessed_gaussians()
-            height = 4
-            width = 4
+            height = 32
+            width = 16
 
         print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
@@ -411,8 +413,8 @@ class GaussianScene2(nn.Module):
         """
         if test:
             preprocessed_gaussians = self.create_test_preprocessed_gaussians()
-            height = 4
-            width = 4
+            height = 32
+            width = 32
 
         print("starting sum")
         # preprocessed_gaussians.tiles_touched = preprocessed_gaussians.tiles_touched[:100]
@@ -442,7 +444,7 @@ class GaussianScene2(nn.Module):
         _, indices = torch.sort(array[:, 0], stable=True)
         array = array[indices]
         starting_indices = self.get_start_idx(
-            array, math.ceil(width / tile_size), math.ceil(height / tile_size)
+            array, math.ceil(height / tile_size), math.ceil(width / tile_size)
         )
 
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
@@ -452,19 +454,16 @@ class GaussianScene2(nn.Module):
         tile_indices = array[:, 0:2].int()
         array_indices = array[:, 3].int()
         starting_indices = starting_indices.int()
+        final_tile_indices = tile_indices[:, 0] * starting_indices.shape[1] + tile_indices[:, 1]
 
         target_pixel_x = 2750
         target_pixel_y = 500
         target_tile_x = target_pixel_x // tile_size
         target_tile_y = target_pixel_y // tile_size
 
-        height = 4
-        width = 4
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
         
-        import pdb; pdb.set_trace()
-
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),
@@ -473,7 +472,7 @@ class GaussianScene2(nn.Module):
             preprocessed_gaussians.inverted_covariance_2d.contiguous(),
             image.contiguous(),
             starting_indices.contiguous(),
-            tile_indices.contiguous(),
+            final_tile_indices.contiguous(),
             array_indices.contiguous(),
             height,
             width,
