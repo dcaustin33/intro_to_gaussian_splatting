@@ -109,7 +109,7 @@ __global__ void render_tile_kernel(
     __shared__ float shared_point_opacities[TILE_SIZE * TILE_SIZE];
     __shared__ float shared_inverse_covariance_2d[TILE_SIZE * TILE_SIZE * 3];
 
-    if (pixel_x >= image_height || pixel_y >= image_width)
+    if (pixel_x >= image_width || pixel_y >= image_height)
     {
         // still helps with the shared memory so no return
         done = true;
@@ -128,7 +128,10 @@ __global__ void render_tile_kernel(
     float total_weight = 1.0f;
     float3 color = {0.0f, 0.0f, 0.0f};
     int num_done = 0;
-    int correct_tile_idx = tile_x * gridDim.y + tile_y;
+
+    // TODO: is this correct if width is x and height is y
+    // the trhead idx and the correct tile idx do it different ways
+    int correct_tile_idx = tile_y * gridDim.x + tile_x;
     int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
     // print the max thread idx
     shared_done_indicator[thread_idx] = false;
@@ -188,11 +191,6 @@ __global__ void render_tile_kernel(
         __syncthreads();
         round_counter++;
 
-        if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-        {
-            printf("round_counter: %d, done: %d\n", round_counter, done);
-        }
-
         int shared_done_count = 0;
         if (!done)
         {
@@ -200,10 +198,6 @@ __global__ void render_tile_kernel(
             // a done indicator is reached
             for (int i = 0; i < thread_dim; i++)
             {
-                if (target_tile_x == tile_x && target_tile_y == tile_y && thread_idx == 15)
-                {
-                    printf("shared_done_indicator[%d]: %d\n", i, shared_done_indicator[i]);
-                }
                 if (shared_done_indicator[i])
                 {
                     shared_done_count++;
@@ -249,9 +243,9 @@ __global__ void render_tile_kernel(
         }
     }
 
-    if (pixel_x < image_height && pixel_y < image_width)
+    if (pixel_x < image_width && pixel_y < image_height)
     {
-        int pixel_idx = (pixel_x * image_width + pixel_y) * 3;
+        int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
         if (pixel_idx + 2 < image_width * image_height * 3)
         {
             image[pixel_idx] = color.x;

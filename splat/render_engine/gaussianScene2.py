@@ -91,6 +91,8 @@ class GaussianScene2(nn.Module):
         The calculation is figuring out how many tiles the x spans
         Then how many the y spans then multiplying them together
         """
+        # x corresponds to height in images
+        # y corresponds to width in images
         max_tile_x = math.ceil(width / tile_size) - 1
         max_tile_y = math.ceil(height / tile_size) - 1
 
@@ -266,6 +268,7 @@ class GaussianScene2(nn.Module):
         # create a total_tiles_x x total_tiles_y array where the input is the part in the array where it starts
         # then we can just take the argmax of that array to get the start idx
         array_map = torch.ones((total_x_tiles, total_y_tiles), device=array.device) * -1
+
         for idx in range(len(array)):
             tile_x = array[idx, 0].int().item()
             tile_y = array[idx, 1].int().item()
@@ -296,7 +299,7 @@ class GaussianScene2(nn.Module):
         return color * current_T * alpha, test_t
 
     def create_test_preprocessed_gaussians(self) -> PreprocessedGaussian:
-        means_3d = torch.tensor([[0, 0, 1], [0, 30, 1]], device=self.device).float()
+        means_3d = torch.tensor([[0, 0, 1], [30, 0, 1]], device=self.device).float()
         colors = torch.tensor([[1, 0, 0], [0, 0, 1]], device=self.device).float()
         opacities = torch.tensor([1.0, 1.0], device=self.device)
         inverted_covariance_2d = torch.tensor(
@@ -305,9 +308,9 @@ class GaussianScene2(nn.Module):
         covariance_2d = torch.inverse(inverted_covariance_2d)
         tiles_touched = torch.tensor([1, 1], device=self.device).int()
         
-        # top left first entry will be the upper left x coordinate of all points
-        top_left = torch.tensor([[0, 0], [0, 1]], device=self.device)
-        bottom_right = torch.tensor([[0, 0], [0, 1]], device=self.device)
+        # should be a 2xn array where first row is x coordinates and second row is y coordinates
+        top_left = torch.tensor([[0, 1], [0, 0]], device=self.device)
+        bottom_right = torch.tensor([[0, 1], [0, 0]], device=self.device)
         radius = torch.tensor([1, 1], device=self.device)
         return PreprocessedGaussian(
             means_3d=means_3d,
@@ -335,8 +338,8 @@ class GaussianScene2(nn.Module):
         """
         if test:
             preprocessed_gaussians = self.create_test_preprocessed_gaussians()
-            height = 32
-            width = 16
+            height = 16
+            width = 32
 
         print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
@@ -359,9 +362,9 @@ class GaussianScene2(nn.Module):
             array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
 
-        image = torch.zeros((width, height, 3), device=self.device, dtype=torch.float32)
-        t_values = torch.ones((width, height), device=self.device)
-        done = torch.zeros((width, height), device=self.device, dtype=torch.bool)
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
+        t_values = torch.ones((height, width), device=self.device)
+        done = torch.zeros((height, width), device=self.device, dtype=torch.bool)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
@@ -379,7 +382,7 @@ class GaussianScene2(nn.Module):
                         continue
                     if x < 0 or y < 0:
                         continue
-                    if done[x, y]:
+                    if done[y, x]:
                         continue
                     output = self.render_pixel(
                         x_value=x,
@@ -390,13 +393,13 @@ class GaussianScene2(nn.Module):
                         ],
                         opacity=preprocessed_gaussians.opacity[gaussian_idx],
                         color=preprocessed_gaussians.color[gaussian_idx],
-                        current_T=t_values[x, y],
+                        current_T=t_values[y, x],
                     )
                     if output is None:
-                        done[x, y] = True
+                        done[y, x] = True
                         continue
-                    image[x, y] += output[0]
-                    t_values[x, y] = output[1]
+                    image[y, x] += output[0]
+                    t_values[y, x] = output[1]
         return image
 
     def render_cuda(
@@ -444,7 +447,7 @@ class GaussianScene2(nn.Module):
         _, indices = torch.sort(array[:, 0], stable=True)
         array = array[indices]
         starting_indices = self.get_start_idx(
-            array, math.ceil(height / tile_size), math.ceil(width / tile_size)
+            array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
 
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
@@ -455,11 +458,6 @@ class GaussianScene2(nn.Module):
         array_indices = array[:, 3].int()
         starting_indices = starting_indices.int()
         final_tile_indices = tile_indices[:, 0] * starting_indices.shape[1] + tile_indices[:, 1]
-
-        target_pixel_x = 2750
-        target_pixel_y = 500
-        target_tile_x = target_pixel_x // tile_size
-        target_tile_y = target_pixel_y // tile_size
 
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
