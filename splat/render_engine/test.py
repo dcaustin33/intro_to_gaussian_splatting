@@ -2,7 +2,6 @@ import numpy as np
 import pycolmap
 import torch
 import torch.nn as nn
-import torchvision
 
 from splat.gaussians import Gaussians
 from splat.utils import read_images_binary, read_images_text
@@ -88,6 +87,3 @@ with torch.no_grad():
     )
 
 import pdb; pdb.set_trace()
-output_image = (output_image * 255).to(torch.uint8).permute(2, 0, 1)
-# save the image
-torchvision.io.write_png(output_image.cpu().detach(), "output_image.png")

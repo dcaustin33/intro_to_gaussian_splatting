@@ -267,13 +267,13 @@ class GaussianScene2(nn.Module):
         """
         # create a total_tiles_x x total_tiles_y array where the input is the part in the array where it starts
         # then we can just take the argmax of that array to get the start idx
-        array_map = torch.ones((total_x_tiles, total_y_tiles), device=array.device) * -1
+        array_map = torch.ones((total_y_tiles, total_x_tiles), device=array.device) * -1
 
-        for idx in range(len(array)):
+        for idx in tqdm.tqdm(range(len(array))):
             tile_x = array[idx, 0].int().item()
             tile_y = array[idx, 1].int().item()
-            array_map[tile_x, tile_y] = (
-                idx if array_map[tile_x, tile_y] == -1 else array_map[tile_x, tile_y]
+            array_map[tile_y, tile_x] = (
+                idx if array_map[tile_y, tile_x] == -1 else array_map[tile_y, tile_x]
             )
         return array_map
 
@@ -287,6 +287,7 @@ class GaussianScene2(nn.Module):
         color: torch.Tensor,
         current_T: float,
         min_weight: float = 0.00001,
+        verbose: bool = False,
     ) -> Optional[torch.Tensor]:
         """Uses alpha blending to render a pixel"""
         gaussian_strength = extract_gaussian_weight(
@@ -294,6 +295,10 @@ class GaussianScene2(nn.Module):
         )
         alpha = gaussian_strength * torch.sigmoid(opacity)
         test_t = current_T * (1 - alpha)
+        if verbose:
+            print(
+                f"x_value: {x_value}, y_value: {y_value}, gaussian_strength: {gaussian_strength}, alpha: {alpha}, test_t: {test_t}, mean_2d: {mean_2d}"
+            )
         if test_t < min_weight:
             return
         return color * current_T * alpha, test_t
@@ -307,7 +312,7 @@ class GaussianScene2(nn.Module):
         ).view(2, 2, 2)
         covariance_2d = torch.inverse(inverted_covariance_2d)
         tiles_touched = torch.tensor([1, 1], device=self.device).int()
-        
+
         # should be a 2xn array where first row is x coordinates and second row is y coordinates
         top_left = torch.tensor([[0, 0], [0, 1]], device=self.device)
         bottom_right = torch.tensor([[0, 0], [0, 1]], device=self.device)
@@ -365,6 +370,11 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         t_values = torch.ones((height, width), device=self.device)
         done = torch.zeros((height, width), device=self.device, dtype=torch.bool)
+        target_pixel_x = 2500
+        target_pixel_y = 500
+        target_tile_x = target_pixel_x // 16
+        target_tile_y = target_pixel_y // 16
+        print(target_tile_x, target_tile_y)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
@@ -374,6 +384,9 @@ class GaussianScene2(nn.Module):
 
             starting_image_x = (tile_x * tile_size).int().item()
             starting_image_y = (tile_y * tile_size).int().item()
+
+            if tile_x != target_tile_x or tile_y != target_tile_y:
+                continue
 
             for x in range(starting_image_x, starting_image_x + tile_size):
                 for y in range(starting_image_y, starting_image_y + tile_size):
@@ -394,6 +407,7 @@ class GaussianScene2(nn.Module):
                         opacity=preprocessed_gaussians.opacity[gaussian_idx],
                         color=preprocessed_gaussians.color[gaussian_idx],
                         current_T=t_values[y, x],
+                        verbose=(x == target_pixel_x and y == target_pixel_y),
                     )
                     if output is None:
                         done[y, x] = True
@@ -433,7 +447,9 @@ class GaussianScene2(nn.Module):
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
         # the last 32 bits will be the z depth of the gaussian
+        print("Creating key to tile map")
         array = self.create_key_to_tile_map(array, preprocessed_gaussians)
+        print("Sorting array")
         # sort the array by the x and y coordinates
         # First, sort by 'z' coordinate
         _, indices = torch.sort(array[:, 2], stable=True)
@@ -446,22 +462,30 @@ class GaussianScene2(nn.Module):
         # Finally, sort by 'x' coordinate
         _, indices = torch.sort(array[:, 0], stable=True)
         array = array[indices]
+        print("Getting start indices")
         starting_indices = self.get_start_idx(
             array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
-
+        
+        print("Creating image")
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
-        print(image.device)
+
         print("Starting render")
 
         tile_indices = array[:, 0:2].int()
         array_indices = array[:, 3].int()
         starting_indices = starting_indices.int()
-        final_tile_indices = tile_indices[:, 0] * starting_indices.shape[1] + tile_indices[:, 1]
+        final_tile_indices = (
+            tile_indices[:, 1] * starting_indices.shape[1] + tile_indices[:, 0]
+        )
+        target_pixel_x = 2500
+        target_pixel_y = 500
+        target_tile_x = target_pixel_x // 16
+        target_tile_y = target_pixel_y // 16
 
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
-        
+
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),
