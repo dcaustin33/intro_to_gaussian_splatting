@@ -299,7 +299,7 @@ class GaussianScene2(nn.Module):
         return color * current_T * alpha, test_t
 
     def create_test_preprocessed_gaussians(self) -> PreprocessedGaussian:
-        means_3d = torch.tensor([[0, 0, 1], [30, 0, 1]], device=self.device).float()
+        means_3d = torch.tensor([[0, 0, 1], [0, 30, 1]], device=self.device).float()
         colors = torch.tensor([[1, 0, 0], [0, 0, 1]], device=self.device).float()
         opacities = torch.tensor([1.0, 1.0], device=self.device)
         inverted_covariance_2d = torch.tensor(
@@ -309,8 +309,8 @@ class GaussianScene2(nn.Module):
         tiles_touched = torch.tensor([1, 1], device=self.device).int()
         
         # should be a 2xn array where first row is x coordinates and second row is y coordinates
-        top_left = torch.tensor([[0, 1], [0, 0]], device=self.device)
-        bottom_right = torch.tensor([[0, 1], [0, 0]], device=self.device)
+        top_left = torch.tensor([[0, 0], [0, 1]], device=self.device)
+        bottom_right = torch.tensor([[0, 0], [0, 1]], device=self.device)
         radius = torch.tensor([1, 1], device=self.device)
         return PreprocessedGaussian(
             means_3d=means_3d,
@@ -338,8 +338,8 @@ class GaussianScene2(nn.Module):
         """
         if test:
             preprocessed_gaussians = self.create_test_preprocessed_gaussians()
-            height = 16
-            width = 32
+            height = 32
+            width = 16
 
         print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
@@ -417,7 +417,7 @@ class GaussianScene2(nn.Module):
         if test:
             preprocessed_gaussians = self.create_test_preprocessed_gaussians()
             height = 32
-            width = 32
+            width = 16
 
         print("starting sum")
         # preprocessed_gaussians.tiles_touched = preprocessed_gaussians.tiles_touched[:100]
