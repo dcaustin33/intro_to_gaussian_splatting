@@ -3,9 +3,9 @@ cxx = c++
 nvcc = /usr/local/cuda/bin/nvcc
 
 cflags = -pthread -B /opt/conda/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /opt/conda/include -fPIC -O2 -isystem /opt/conda/include -fPIC -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/pybind11/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/TH -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/THC -I/usr/local/cuda/include -I/home/da2986/intro_to_gaussian_splatting/.venv/include -I/opt/conda/include/python3.10 -c
-post_cflags = -O0 -std=c++17 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=render_tile_cuda -D_GLIBCXX_USE_CXX11_ABI=0
+post_cflags = -O0 -std=c++17 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=preprocessing -D_GLIBCXX_USE_CXX11_ABI=0
 cuda_cflags = -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/pybind11/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/TH -I/home/da2986/intro_to_gaussian_splatting/.venv/lib/python3.10/site-packages/torch/include/THC -I/usr/local/cuda/include -I/home/da2986/intro_to_gaussian_splatting/.venv/include -I/opt/conda/include/python3.10 -c
-cuda_post_cflags = -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -G -g -std=c++17 -Xcompiler -fPIC -arch=sm_61 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=render_tile_cuda -D_GLIBCXX_USE_CXX11_ABI=0
+cuda_post_cflags = -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -G -g -std=c++17 -Xcompiler -fPIC -arch=sm_61 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=preprocessing -D_GLIBCXX_USE_CXX11_ABI=0
 cuda_dlink_post_cflags = 
 ldflags = 
 
@@ -23,7 +23,7 @@ rule cuda_compile
 
 
 
-build /home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o: cuda_compile /home/da2986/intro_to_gaussian_splatting/splat/c/render_engine.cu
+build /home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/preprocessing.o: cuda_compile /home/da2986/intro_to_gaussian_splatting/splat/c/preprocessing.cu
 
 
 

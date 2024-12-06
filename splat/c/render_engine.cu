@@ -332,7 +332,7 @@ torch::Tensor render_tile_cuda(
     int grid_size_y = (image_height + tile_size - 1) / tile_size;
     dim3 grid_size(grid_size_x, grid_size_y);
 
-    torch::Tensor image_new = torch::zeros({image_height, image_width, 3}, image.options());
+    torch::Tensor image_new = torch::ones({image_height, image_width, 3}, image.options());
 
     // print the amount of elements in image tensor
     printf("Number of elements in image tensor: %zu\n", image.numel());

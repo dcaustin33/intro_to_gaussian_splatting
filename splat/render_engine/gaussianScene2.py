@@ -18,6 +18,7 @@ from splat.utils import extract_gaussian_weight, ndc2Pix
 
 if torch.cuda.is_available():
     from splat.c import render_tile_cuda
+    from splat.c import preprocessing
 
 
 class GaussianScene2(nn.Module):
@@ -463,10 +464,9 @@ class GaussianScene2(nn.Module):
         _, indices = torch.sort(array[:, 0], stable=True)
         array = array[indices]
         print("Getting start indices")
-        starting_indices = self.get_start_idx(
+        starting_indices = preprocessing.get_start_idx_cuda(
             array, math.ceil(width / tile_size), math.ceil(height / tile_size)
         )
-        
         print("Creating image")
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
 

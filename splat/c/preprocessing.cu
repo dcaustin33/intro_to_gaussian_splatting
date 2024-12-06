@@ -24,16 +24,20 @@
     CHECK_CUDA_INPUT(x); \
     CHECK_CONTIGUOUS_INPUT(x)
 
+#define DEBUG_PRINT
+
 namespace py = pybind11;
 
 __global__ void get_start_idx_kernel(
-    float* array,
+    at::Half* array,
     int* starting_idx,
     int total_x_tiles,
     int total_y_tiles,
     int array_length
 )
 {
+    
+
     // we are only going to use 1d blocks and 1d thread blocks
     int array_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (array_idx >= array_length)
@@ -41,8 +45,10 @@ __global__ void get_start_idx_kernel(
         return;
     }
 
-    int tile_x = static_cast<int>(array[4 * array_idx]);
-    int tile_y = static_cast<int>(array[4 * array_idx + 1]);
+    float val_x = static_cast<float>(array[4 * array_idx]);
+    float val_y = static_cast<float>(array[4 * array_idx + 1]);
+    int tile_x = static_cast<int>(val_x);
+    int tile_y = static_cast<int>(val_y);
 
     // Compute linear index into array_map
     int map_idx = tile_y * total_x_tiles + tile_x;
@@ -62,6 +68,16 @@ __global__ void get_start_idx_kernel(
             atomicMin(ptr, array_idx);
         }
     }
+#ifdef DEBUG_PRINT
+    int target_tile = 1;
+    if (map_idx == target_tile)
+    {
+        printf("array_idx: %d val_x: %f val_y: %f tile_x: %d tile_y: %d old_val: %d, array_length: %d\n", 
+            array_idx, val_x, val_y, tile_x, tile_y, old_val, array_length
+        );
+
+    }
+#endif
 }
 
 
@@ -72,12 +88,12 @@ torch::Tensor get_start_idx_cuda(
 )
 {
     CHECK_INPUT(array);
-    torch::Tensor starting_idx = torch::zeros({total_y_tiles, total_x_tiles}, torch::TensorOptions().dtype(torch::kInt32).device(array.device()));
+    torch::Tensor starting_idx = torch::ones({total_y_tiles, total_x_tiles}, torch::TensorOptions().dtype(torch::kInt32).device(array.device())) * -1;
     int array_length = array.size(0);
     dim3 grid_size((array_length + TILE_SIZE*TILE_SIZE - 1) / (TILE_SIZE*TILE_SIZE), 1);
     dim3 block_size(TILE_SIZE * TILE_SIZE, 1);
     get_start_idx_kernel<<<grid_size, block_size>>>(
-        array.data_ptr<float>(),
+        array.data_ptr<at::Half>(),
         starting_idx.data_ptr<int>(),
         total_x_tiles,
         total_y_tiles,
