@@ -205,6 +205,9 @@ class GaussianScene2(nn.Module):
             points_ndc[:, 0:2], radius, tile_size, height, width
         )
 
+        top_left = torch.stack([top_left[0], top_left[1]]).to(self.device)
+        bottom_right = torch.stack([bottom_right[0], bottom_right[1]]).to(self.device)
+        print(top_left.shape, bottom_right.shape)
         return PreprocessedGaussian(
             means_3d=points_ndc,
             covariance_2d=covariance2d,

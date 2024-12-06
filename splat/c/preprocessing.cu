@@ -104,7 +104,73 @@ torch::Tensor get_start_idx_cuda(
     return starting_idx;
 }
 
+
+__global__ void create_key_to_tile_map_kernel(
+    at::Half* array,
+    int* top_left,
+    float* means_3d,
+    int* prefix_sum,
+    int* bottom_right,
+    int prefix_sum_length
+) 
+{
+    int start_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (start_idx >= prefix_sum_length) {
+        return;
+    }
+    int array_idx = prefix_sum[start_idx];
+
+    int top_left_x = static_cast<int>(top_left[start_idx * 2]);
+    int top_left_y = static_cast<int>(top_left[start_idx * 2 + 1]);
+    int bottom_right_x = static_cast<int>(bottom_right[start_idx * 2]);
+    int bottom_right_y = static_cast<int>(bottom_right[start_idx * 2 + 1]);
+    float z_depth = means_3d[start_idx * 3 + 2];
+
+    for (int x = top_left_x; x <= bottom_right_x; x++) {
+        for (int y = top_left_y; y <= bottom_right_y; y++) {
+            array[4 * array_idx] = static_cast<at::Half>(x);
+            array[4 * array_idx + 1] = static_cast<at::Half>(y);
+            array[4 * array_idx + 2] = static_cast<at::Half>(z_depth);
+            array[4 * array_idx + 3] = static_cast<at::Half>(start_idx);
+            array_idx++;
+        }
+    }
+
+}
+
+
+torch::Tensor create_key_to_tile_map_cuda(
+    torch::Tensor array,
+    torch::Tensor means_3d,
+    torch::Tensor top_left,
+    torch::Tensor bottom_right,
+    torch::Tensor prefix_sum
+) 
+{
+    CHECK_INPUT(array);
+    CHECK_INPUT(means_3d);
+    CHECK_INPUT(top_left);
+    CHECK_INPUT(bottom_right);
+    CHECK_INPUT(prefix_sum);
+
+    int prefix_sum_length = prefix_sum.size(0);
+    dim3 grid_size((prefix_sum_length + TILE_SIZE*TILE_SIZE - 1) / (TILE_SIZE*TILE_SIZE), 1);
+    dim3 block_size(TILE_SIZE * TILE_SIZE, 1);
+    create_key_to_tile_map_kernel<<<grid_size, block_size>>>(
+        array.data_ptr<at::Half>(),
+        top_left.data_ptr<int>(),
+        means_3d.data_ptr<float>(),
+        prefix_sum.data_ptr<int>(),
+        bottom_right.data_ptr<int>(),
+        prefix_sum_length
+    );
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    return array;
+}
+
 PYBIND11_MODULE(preprocessing, m)
 {
     m.def("get_start_idx_cuda", &get_start_idx_cuda, "Get the start idx of the tile");
+    m.def("create_key_to_tile_map_cuda", &create_key_to_tile_map_cuda, "Create the key to tile map");
 }
