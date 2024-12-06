@@ -24,7 +24,7 @@
     CHECK_CUDA_INPUT(x); \
     CHECK_CONTIGUOUS_INPUT(x)
 
-#define DEBUG_PRINT
+// #define DEBUG_PRINT
 
 namespace py = pybind11;
 
@@ -118,13 +118,29 @@ __global__ void create_key_to_tile_map_kernel(
     if (start_idx >= prefix_sum_length) {
         return;
     }
-    int array_idx = prefix_sum[start_idx];
+    // prefix sum has a value in first entry not 0
+    int array_idx;
+    if (start_idx == 0) {
+        array_idx = 0;
+    } else {
+        array_idx = prefix_sum[start_idx - 1];
+    }
 
-    int top_left_x = static_cast<int>(top_left[start_idx * 2]);
-    int top_left_y = static_cast<int>(top_left[start_idx * 2 + 1]);
-    int bottom_right_x = static_cast<int>(bottom_right[start_idx * 2]);
-    int bottom_right_y = static_cast<int>(bottom_right[start_idx * 2 + 1]);
-    float z_depth = means_3d[start_idx * 3 + 2];
+    // 2xn so you have to wrap all of the way around
+    int top_left_x = static_cast<int>(top_left[start_idx]);
+    int top_left_y = static_cast<int>(top_left[start_idx + prefix_sum_length]);
+    int bottom_right_x = static_cast<int>(bottom_right[start_idx]);
+    int bottom_right_y = static_cast<int>(bottom_right[start_idx + prefix_sum_length]);
+#ifdef DEBUG_PRINT
+    int target_array_idx = 0;
+    if (start_idx == target_array_idx)
+    {
+        printf("start_idx: %d top_left_x: %d top_left_y: %d bottom_right_x: %d bottom_right_y: %d\n", 
+            start_idx, top_left_x, top_left_y, bottom_right_x, bottom_right_y
+        );
+    }
+#endif
+    float z_depth = means_3d[start_idx * 4 + 2];
 
     for (int x = top_left_x; x <= bottom_right_x; x++) {
         for (int y = top_left_y; y <= bottom_right_y; y++) {

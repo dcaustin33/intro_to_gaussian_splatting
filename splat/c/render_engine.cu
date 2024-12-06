@@ -172,10 +172,13 @@ __global__ void render_tile_kernel(
 
         // Calculate global memory offset for this point
         int point_offset = point_idx + thread_idx;
+
+#ifdef PRINT_DEBUG
         if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
         {
             printf("point_offset: %d. num_array_points: %d\n", point_offset, num_array_points);
         }
+#endif
         if (point_offset >= num_array_points)
         {
             shared_done_indicator[thread_idx] = true;

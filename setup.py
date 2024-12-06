@@ -13,9 +13,9 @@ setup(
             ],
             extra_compile_args={
                 'nvcc': [
-                    # '-O0',  # No optimization
-                    "-G",
-                    "-g",
+                    '-O3',  # No optimization
+                    # "-G",
+                    # "-g",
                     '-std=c++17',
                     '-Xcompiler', '-fPIC',
                     '-arch=sm_61',
@@ -31,9 +31,9 @@ setup(
             ],
             extra_compile_args={
                 'nvcc': [
-                    # '-O0',  # No optimization
-                    "-G",
-                    "-g",
+                    '-O3',  # No optimization
+                    # "-G",
+                    # "-g",
                     '-std=c++17',
                     '-Xcompiler', '-fPIC',
                     '-arch=sm_61',

@@ -187,7 +187,7 @@ class GaussianScene2(nn.Module):
         )
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
-        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)  # nx3
+        points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
@@ -437,12 +437,8 @@ class GaussianScene2(nn.Module):
             height = 32
             width = 16
 
-        print("starting sum")
-        # preprocessed_gaussians.tiles_touched = preprocessed_gaussians.tiles_touched[:100]
-        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
-        print("ending sum")
+        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0).int()
 
-        print(prefix_sum[-1], preprocessed_gaussians.tiles_touched.shape[0])
         print(math.ceil(width / tile_size), math.ceil(height / tile_size))
 
         array = torch.zeros(
@@ -451,9 +447,13 @@ class GaussianScene2(nn.Module):
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
         # the last 32 bits will be the z depth of the gaussian
-        print("Creating key to tile map")
-        array = self.create_key_to_tile_map(array, preprocessed_gaussians)
-        print("Sorting array")
+        array = preprocessing.create_key_to_tile_map_cuda(
+            array,
+            preprocessed_gaussians.means_3d.contiguous(),
+            preprocessed_gaussians.top_left.contiguous(),
+            preprocessed_gaussians.bottom_right.contiguous(),
+            prefix_sum,
+        )
         # sort the array by the x and y coordinates
         # First, sort by 'z' coordinate
         _, indices = torch.sort(array[:, 2], stable=True)
@@ -466,14 +466,14 @@ class GaussianScene2(nn.Module):
         # Finally, sort by 'x' coordinate
         _, indices = torch.sort(array[:, 0], stable=True)
         array = array[indices]
-        print("Getting start indices")
         starting_indices = preprocessing.get_start_idx_cuda(
-            array, math.ceil(width / tile_size), math.ceil(height / tile_size)
+            array.contiguous(),
+            math.ceil(width / tile_size),
+            math.ceil(height / tile_size),
         )
-        print("Creating image")
+        
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
 
-        print("Starting render")
 
         tile_indices = array[:, 0:2].int()
         array_indices = array[:, 3].int()
@@ -481,10 +481,6 @@ class GaussianScene2(nn.Module):
         final_tile_indices = (
             tile_indices[:, 1] * starting_indices.shape[1] + tile_indices[:, 0]
         )
-        target_pixel_x = 2500
-        target_pixel_y = 500
-        target_tile_x = target_pixel_x // 16
-        target_tile_y = target_pixel_y // 16
 
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
