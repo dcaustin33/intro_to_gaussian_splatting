@@ -186,7 +186,7 @@ class GaussianScene2(nn.Module):
         )
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
-        points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
+        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]

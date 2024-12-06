@@ -3,6 +3,7 @@
         "complex": "cpp",
         "valarray": "cpp",
         "__locale": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "array": "cpp"
     }
 }

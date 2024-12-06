@@ -232,6 +232,7 @@ def getIntinsicMatrix(
     width: torch.Tensor,
     zfar: torch.Tensor = torch.Tensor([100.0]),
     znear: torch.Tensor = torch.Tensor([0.001]),
+    z_sign: float = 1.0,
 ) -> torch.Tensor:
     """
     Gets the internal perspective projection matrix
@@ -240,6 +241,7 @@ def getIntinsicMatrix(
     zfar: far plane set by user
     fovX: field of view in x, calculated from the focal length
     fovY: field of view in y, calculated from the focal length
+    z_sign: sign of the z component we want positive to be visible
     """
     fovX = torch.Tensor([2 * math.atan(width / (2 * focal_x))])
     fovY = torch.Tensor([2 * math.atan(height / (2 * focal_y))])
@@ -254,15 +256,14 @@ def getIntinsicMatrix(
 
     P = torch.zeros(4, 4)
 
-    z_sign = 1.0
-
     P[0, 0] = 2.0 * znear / (right - left)
     P[1, 1] = 2.0 * znear / (top - bottom)
     P[0, 2] = (right + left) / (right - left)
     P[1, 2] = (top + bottom) / (top - bottom)
     P[3, 2] = z_sign
+    # not doing zfar + znear as znear is miniscule
     P[2, 2] = z_sign * zfar / (zfar - znear)
-    P[2, 3] = -(zfar * znear) / (zfar - znear)
+    P[2, 3] = -2*(zfar * znear) / (zfar - znear)
     return P
 
 
