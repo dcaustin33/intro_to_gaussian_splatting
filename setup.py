@@ -20,7 +20,7 @@ setup(
                     '-Xcompiler', '-fPIC',
                     '-arch=sm_61',
                 ],
-                'cxx': ['-O0', '-std=c++17'],  # No optimization
+                'cxx': ['-O3', '-std=c++17'],  # No optimization
             },
         ),
         CUDAExtension(
@@ -38,7 +38,7 @@ setup(
                     '-Xcompiler', '-fPIC',
                     '-arch=sm_61',
                 ],
-                'cxx': ['-O0', '-std=c++17'],  # No optimization
+                'cxx': ['-O3', '-std=c++17'],  # No optimization
             },
         ),
         # Extension(
