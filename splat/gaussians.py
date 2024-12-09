@@ -1,10 +1,9 @@
-import os
 from typing import Optional
 
 import torch
 from torch import nn
 
-from splat.utils import build_rotation, inverse_sigmoid, storePly
+from splat.utils import build_rotation, inverse_sigmoid
 
 
 class Gaussians(nn.Module):
@@ -12,15 +11,12 @@ class Gaussians(nn.Module):
         self,
         points: torch.Tensor,
         colors: torch.Tensor,
-        model_path: str = ".",
         scales: Optional[torch.Tensor] = None,
         quaternions: Optional[torch.Tensor] = None,
         opacity: Optional[torch.Tensor] = None,
         requires_grad: bool = False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.point_cloud_path = os.path.join(model_path, "point_cloud.ply")
-        storePly(self.point_cloud_path, points, colors)
         self.points = points.clone().requires_grad_(requires_grad).to(self.device).float()
         self.colors = (
             (colors / 256).clone().requires_grad_(requires_grad).to(self.device).float()

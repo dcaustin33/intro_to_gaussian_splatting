@@ -1,4 +1,10 @@
 import struct
+from typing import Dict, List
+
+import torch
+import tqdm
+
+from splat.gaussians import Gaussians
 
 
 def parse_ply_header(file):
@@ -35,7 +41,7 @@ def read_binary_vertex_data(file, vertex_count, properties):
     struct_format = "".join(dtype_map[prop[0]] for prop in properties)
     struct_size = struct.calcsize(struct_format)
     
-    for _ in range(vertex_count):
+    for _ in tqdm.tqdm(range(vertex_count)):
         binary_data = file.read(struct_size)
         unpacked_data = struct.unpack(struct_format, binary_data)
         data.append(dict(zip([prop[1] for prop in properties], unpacked_data)))
@@ -55,6 +61,28 @@ def read_ply_file(filename):
         # Read vertex data
         vertices = read_binary_vertex_data(file, vertex_count, properties)
     return vertices
+
+def convert_sh_to_rgb(sh_dc: torch.Tensor) -> torch.Tensor:
+    C0 = 0.28209479177387814
+    sh_dv = (sh_dc * C0) + 0.5
+    
+    return torch.clamp(sh_dv, 0, 1)
+
+
+def convert_to_gaussian_schema(vertices: List[Dict[str, float]]) -> Gaussians:
+    gaussian_means = [[v['x'], v['y'], v['z']] for v in vertices]
+    gaussian_dc_sh = [[v['f_dc_0'], v['f_dc_1'], v['f_dc_2']] for v in vertices]
+    opacity = [v['opacity'] for v in vertices]
+    scale = [[v['scale_0'], v['scale_1'], v['scale_2']] for v in vertices]
+    rotation = [[v['rot_0'], v['rot_1'], v['rot_2'], v['rot_3']] for v in vertices]
+    gaussians = Gaussians(
+        points=torch.tensor(gaussian_means),
+        colors=convert_sh_to_rgb(torch.tensor(gaussian_dc_sh)),
+        scales=torch.tensor(scale),
+        quaternions=torch.tensor(rotation),
+        opacity=torch.tensor(opacity),
+    )
+    return gaussians
 
 
 # Usage
