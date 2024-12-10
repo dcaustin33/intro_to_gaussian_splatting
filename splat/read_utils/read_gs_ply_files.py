@@ -75,6 +75,9 @@ def convert_to_gaussian_schema(vertices: List[Dict[str, float]]) -> Gaussians:
     opacity = [v['opacity'] for v in vertices]
     scale = [[v['scale_0'], v['scale_1'], v['scale_2']] for v in vertices]
     rotation = [[v['rot_0'], v['rot_1'], v['rot_2'], v['rot_3']] for v in vertices]
+    print(gaussian_dc_sh[0])
+    colors = convert_sh_to_rgb(torch.tensor(gaussian_dc_sh))
+    print(colors[0])
     gaussians = Gaussians(
         points=torch.tensor(gaussian_means),
         colors=convert_sh_to_rgb(torch.tensor(gaussian_dc_sh)),

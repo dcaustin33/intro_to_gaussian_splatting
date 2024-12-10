@@ -18,8 +18,12 @@ class Gaussians(nn.Module):
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.points = points.clone().requires_grad_(requires_grad).to(self.device).float()
+        if colors.max() > 1:
+            divisor = 256
+        else:
+            divisor = 1
         self.colors = (
-            (colors / 256).clone().requires_grad_(requires_grad).to(self.device).float()
+            (colors / divisor).clone().requires_grad_(requires_grad).to(self.device).float()
         )
         if scales is None:
             self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.005
