@@ -44,16 +44,13 @@ class GaussianScene2(nn.Module):
         y = points_camera_space[:, 1] / points_camera_space[:, 2]
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
+        z = points_camera_space[:, 2]
 
         j = torch.zeros((points_camera_space.shape[0], 2, 3)).to(self.device)
-        j[:, 0, 0] = focal_x / points_camera_space[:, 2]
-        j[:, 0, 2] = (focal_x * points_camera_space[:, 0]) / (
-            points_camera_space[:, 2] ** 2
-        )
-        j[:, 1, 1] = focal_y / points_camera_space[:, 2]
-        j[:, 1, 2] = (focal_y * points_camera_space[:, 1]) / (
-            points_camera_space[:, 2] ** 2
-        )
+        j[:, 0, 0] = focal_x / z
+        j[:, 0, 2] = (focal_x * x) / (z ** 2)
+        j[:, 1, 1] = focal_y / z
+        j[:, 1, 2] = (focal_y * y) / (z ** 2)
 
         # we assume our extrinsic matrix has the translation in the last row
         # so it is already transposed so we transpose back
@@ -189,6 +186,7 @@ class GaussianScene2(nn.Module):
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
+        points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
