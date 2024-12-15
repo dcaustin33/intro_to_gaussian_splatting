@@ -5,7 +5,7 @@ point_clouds
 360_extra_scenes
 360_extra_scenes.zip
 *.python-version
-*/__pycache__
+**/__pycache__
 *.ply
 *.zip
 flowers
