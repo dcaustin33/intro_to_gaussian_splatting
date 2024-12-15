@@ -349,7 +349,7 @@ class GaussianScene2(nn.Module):
             width = 16
 
         print("starting sum")
-        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0)
+        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
         print("ending sum")
 
         array = torch.zeros(
@@ -435,7 +435,7 @@ class GaussianScene2(nn.Module):
             height = 32
             width = 16
 
-        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched, dim=0).int()
+        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
 
         print(math.ceil(width / tile_size), math.ceil(height / tile_size))
 
@@ -483,6 +483,7 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
 
+        import pdb; pdb.set_trace()
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),

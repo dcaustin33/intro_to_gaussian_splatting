@@ -108,7 +108,7 @@ torch::Tensor get_start_idx_cuda(
 __global__ void create_key_to_tile_map_kernel(
     at::Half* array,
     float* means_3d,
-    int* prefix_sum,
+    int64_t* prefix_sum,
     int* top_left,
     int* bottom_right,
     int prefix_sum_length
@@ -175,7 +175,7 @@ torch::Tensor create_key_to_tile_map_cuda(
     create_key_to_tile_map_kernel<<<grid_size, block_size>>>(
         array.data_ptr<at::Half>(),
         means_3d.data_ptr<float>(),
-        prefix_sum.data_ptr<int>(),
+        prefix_sum.data_ptr<int64_t>(),
         top_left.data_ptr<int>(),
         bottom_right.data_ptr<int>(),
         prefix_sum_length

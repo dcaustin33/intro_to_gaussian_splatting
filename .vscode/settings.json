@@ -4,6 +4,7 @@
         "valarray": "cpp",
         "__locale": "cpp",
         "random": "cpp",
-        "array": "cpp"
+        "array": "cpp",
+        "*.tcc": "cpp"
     }
 }

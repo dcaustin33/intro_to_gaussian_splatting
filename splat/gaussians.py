@@ -77,9 +77,9 @@ class Gaussians(nn.Module):
         rotation_matrices = build_rotation(quaternions)
         # nx3x3 matrix
         scale_matrices = torch.zeros((len(self.points), 3, 3)).to(self.device)
-        scale_matrices[:, 0, 0] = self.scales[:, 0] * .001
-        scale_matrices[:, 1, 1] = self.scales[:, 1] * .001
-        scale_matrices[:, 2, 2] = self.scales[:, 2] * .001
+        scale_matrices[:, 0, 0] = self.scales[:, 0] * .1
+        scale_matrices[:, 1, 1] = self.scales[:, 1] * .1
+        scale_matrices[:, 2, 2] = self.scales[:, 2] * .1
         m = rotation_matrices @ scale_matrices
         covariance = m @ m.transpose(1, 2)
         return covariance
