@@ -120,12 +120,16 @@ def compute_radius_from_covariance_2d(
     Computes the radius by using the trace of the 
     covariance matrix to find the eigenvalues
     """
+    print("covariance_2d", covariance_2d[:1])
     mid = 0.5 * (covariance_2d[:, 0, 0] + covariance_2d[:, 1, 1])
+    print("mid", mid[:1])
     det = covariance_2d[:, 0, 0] * covariance_2d[:, 1, 1] - covariance_2d[:, 0, 1] ** 2
     lambda1 = mid + torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
     lambda2 = mid - torch.sqrt(torch.clamp(mid**2 - det, min=0.1))
+    print("det", det[:1])
+    print("lambda1, lambda2", lambda1[:1], lambda2[:1])
     max_lambda = torch.max(lambda1, lambda2)
-    return std_dev_multiplier * torch.sqrt(max_lambda)
+    return (std_dev_multiplier * torch.sqrt(max_lambda)).ceil()
 
 def ndc2Pix(points: torch.Tensor, height: float, width: float) -> torch.Tensor:
     """Convert points from NDC to pixel coordinates"""

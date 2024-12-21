@@ -45,25 +45,28 @@ class GaussianScene2(nn.Module):
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
         z = points_camera_space[:, 2]
-
-        j = torch.zeros((points_camera_space.shape[0], 2, 3)).to(self.device)
+        j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(self.device)
         j[:, 0, 0] = focal_x / z
-        j[:, 0, 2] = (focal_x * x) / (z ** 2)
+        j[:, 0, 2] = -(focal_x * x) / (z ** 2)
         j[:, 1, 1] = focal_y / z
-        j[:, 1, 2] = (focal_y * y) / (z ** 2)
+        j[:, 1, 2] = -(focal_y * y) / (z ** 2)
 
         # we assume our extrinsic matrix has the translation in the last row
         # so it is already transposed so we transpose back
         # overall formula for a normal extrinsic matrix is
         # J @ W @ covariance_3d @ W.T @ J.T
+        w = extrinsic_matrix[:3, :3]
+        t = w @ j.transpose(1, 2)
         covariance2d = (
-            j
-            @ extrinsic_matrix[:3, :3].T
-            @ covariance_3d
-            @ extrinsic_matrix[:3, :3]
-            @ j.transpose(1, 2)
+            t.transpose(1, 2)
+            @ covariance_3d.transpose(1, 2) # doesnt this not do anything?
+            @ t
         )
-        return covariance2d, points_camera_space
+        # scale by 0.3 for the covariance and numerical stability on the diagonal
+        # this is a hack to make the covariance matrix more stable
+        covariance2d[:, 0, 0] = covariance2d[:, 0, 0] + 0.3
+        covariance2d[:, 1, 1] = covariance2d[:, 1, 1] + 0.3
+        return covariance2d[:, :2, :2], points_camera_space
 
     def filter_in_view(
         self, points_ndc: torch.Tensor, znear: float = 0.2
@@ -173,6 +176,7 @@ class GaussianScene2(nn.Module):
         )  # Nx4
 
         covariance3d = self.gaussians.get_3d_covariance_matrix().to(self.device)
+
         covariance2d, points_camera_space = self.compute_2d_covariance(
             points_homogeneous,
             covariance3d,
@@ -184,7 +188,8 @@ class GaussianScene2(nn.Module):
         )
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
-        points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)  # nx3
+        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1) 
+        points_ndc = points_ndc[:, :3]  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
         points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
