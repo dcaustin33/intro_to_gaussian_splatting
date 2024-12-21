@@ -483,7 +483,6 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
 
-        import pdb; pdb.set_trace()
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),

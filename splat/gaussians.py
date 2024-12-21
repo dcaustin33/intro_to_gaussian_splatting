@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from splat.utils import build_rotation, inverse_sigmoid
@@ -26,7 +27,7 @@ class Gaussians(nn.Module):
             (colors / divisor).clone().requires_grad_(requires_grad).to(self.device).float()
         )
         if scales is None:
-            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.005
+            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.02
         else:
             self.scales = scales.clone().requires_grad_(requires_grad).to(self.device).float()
 
@@ -77,9 +78,13 @@ class Gaussians(nn.Module):
         rotation_matrices = build_rotation(quaternions)
         # nx3x3 matrix
         scale_matrices = torch.zeros((len(self.points), 3, 3)).to(self.device)
-        scale_matrices[:, 0, 0] = self.scales[:, 0] * .1
-        scale_matrices[:, 1, 1] = self.scales[:, 1] * .1
-        scale_matrices[:, 2, 2] = self.scales[:, 2] * .1
+        scale = self.get_scaling_matrix()
+        scale_matrices[:, 0, 0] = scale[:, 0]
+        scale_matrices[:, 1, 1] = scale[:, 1]
+        scale_matrices[:, 2, 2] = scale[:, 2]
         m = rotation_matrices @ scale_matrices
         covariance = m @ m.transpose(1, 2)
         return covariance
+    
+    def get_scaling_matrix(self) -> torch.Tensor:
+        return torch.exp(self.scales)

@@ -24,3 +24,7 @@
 28	63492	1733514062983170188	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/preprocessing.o	e4985b0fe4d495f2
 325	61981	1734293640695241535	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	aacc341527650213
 28	59539	1734293701128498703	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/preprocessing.o	2bcc2dd96b475cc8
+10	53645	1734738939601958872	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	2b8147674c72770e
+9	55511	1734738995598892536	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/preprocessing.o	9a8ddcf4a500dfd
+10	56066	1734740082490654878	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	2b8147674c72770e
+9	58482	1734740153052872745	/home/da2986/intro_to_gaussian_splatting/build/temp.linux-x86_64-cpython-310/splat/c/render_engine.o	2b8147674c72770e

@@ -6,7 +6,6 @@
 
 #include <pybind11/pybind11.h>
 
-// #define PRINT_DEBUG
 #define TILE_SIZE 16
 #define CUDA_CHECK(call)                                                                   \
     {                                                                                      \
@@ -116,10 +115,10 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    int target_pixel_x = 2500;
-    int target_pixel_y = 500;
-    int target_tile_x = target_pixel_x / TILE_SIZE;
-    int target_tile_y = target_pixel_y / TILE_SIZE;
+    // int target_pixel_x = 2500;
+    // int target_pixel_y = 500;
+    // int target_tile_x = target_pixel_x / TILE_SIZE;
+    // int target_tile_y = target_pixel_y / TILE_SIZE;
 
 #ifdef PRINT_DEBUG
     if (tile_x != target_tile_x && tile_y != target_tile_y)
@@ -259,7 +258,7 @@ __global__ void render_tile_kernel(
                                shared_point_colors[i * 3 + 2]);
                     }
 #endif
-                    if (test_T < 0.001f)
+                    if (test_T < 0.00001f)
                     {
                         done = true;
                         continue;
