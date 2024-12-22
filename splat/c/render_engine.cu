@@ -6,6 +6,7 @@
 
 #include <pybind11/pybind11.h>
 
+// #define PRINT_DEBUG 1
 #define TILE_SIZE 16
 #define CUDA_CHECK(call)                                                                   \
     {                                                                                      \
@@ -115,10 +116,10 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    // int target_pixel_x = 2500;
-    // int target_pixel_y = 500;
-    // int target_tile_x = target_pixel_x / TILE_SIZE;
-    // int target_tile_y = target_pixel_y / TILE_SIZE;
+    int target_pixel_x = 208;
+    int target_pixel_y = 417;
+    int target_tile_x = target_pixel_x / TILE_SIZE;
+    int target_tile_y = target_pixel_y / TILE_SIZE;
 
 #ifdef PRINT_DEBUG
     if (tile_x != target_tile_x && tile_y != target_tile_y)
@@ -143,13 +144,6 @@ __global__ void render_tile_kernel(
     // print the max thread idx
     shared_done_indicator[thread_idx] = false;
 
-#ifdef PRINT_DEBUG
-    if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
-    {
-        printf("correct_tile_idx: %d\n", correct_tile_idx);
-        printf("starting_tile_indices[correct_tile_idx]: %d\n", starting_tile_indices[correct_tile_idx]);
-    }
-#endif
     if (starting_tile_indices[correct_tile_idx] == -1)
     {
         return;
@@ -171,13 +165,6 @@ __global__ void render_tile_kernel(
 
         // Calculate global memory offset for this point
         int point_offset = point_idx + thread_idx;
-
-#ifdef PRINT_DEBUG
-        if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-        {
-            printf("point_offset: %d. num_array_points: %d\n", point_offset, num_array_points);
-        }
-#endif
         if (point_offset >= num_array_points)
         {
             shared_done_indicator[thread_idx] = true;
@@ -202,12 +189,6 @@ __global__ void render_tile_kernel(
                 shared_inverse_covariance_2d[thread_idx * 3 + 1] = inverse_covariance_2d[processed_gaussians_idx * 4 + 1];
                 shared_inverse_covariance_2d[thread_idx * 3 + 2] = inverse_covariance_2d[processed_gaussians_idx * 4 + 3];
             }
-#ifdef PRINT_DEBUG
-            if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-            {
-                printf("tile_idx[point_offset]: %d. correct_tile_idx: %d\n", tile_idx[point_offset], correct_tile_idx);
-            }
-#endif
             if (tile_idx[point_offset] != correct_tile_idx)
             {
                 shared_done_indicator[thread_idx] = true;
@@ -217,12 +198,6 @@ __global__ void render_tile_kernel(
         // wait for all the memory loads to finish
         __syncthreads();
         round_counter++;
-#ifdef PRINT_DEBUG
-        if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-        {
-            printf("round_counter: %d\n", round_counter);
-        }
-#endif
         int shared_done_count = 0;
         if (!done)
         {
@@ -251,9 +226,10 @@ __global__ void render_tile_kernel(
 #ifdef PRINT_DEBUG
                     if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
                     {
-                        printf("test_T: %f, gaussian_strength: %f, alpha: %f, mean1: %f, mean2: %f, color: %f, %f, %f\n",
+                        printf("test_T: %f, gaussian_strength: %f, alpha: %f, mean1: %f, mean2: %f, opacity: %f, color: %f, %f, %f\n",
                                test_T, gaussian_strength, alpha_value,
                                shared_point_means[i * 2], shared_point_means[i * 2 + 1],
+                               opacity_output,
                                shared_point_colors[i * 3], shared_point_colors[i * 3 + 1], 
                                shared_point_colors[i * 3 + 2]);
                     }
@@ -269,12 +245,6 @@ __global__ void render_tile_kernel(
                     total_weight = test_T;
                 }
             }
-#ifdef PRINT_DEBUG
-            if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-            {
-                printf("shared_done_count: %d\n", shared_done_count);
-            }
-#endif
             if (shared_done_count == thread_dim)
             {
                 // this will eventually cause breaking
