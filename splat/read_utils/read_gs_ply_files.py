@@ -41,7 +41,6 @@ def read_binary_vertex_data(file, vertex_count, properties):
     struct_format = "".join(dtype_map[prop[0]] for prop in properties)
     struct_size = struct.calcsize(struct_format)
     
-    # for _ in tqdm.tqdm(range(1000)):
     for _ in tqdm.tqdm(range(vertex_count)):
         binary_data = file.read(struct_size)
         unpacked_data = struct.unpack(struct_format, binary_data)

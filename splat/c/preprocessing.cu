@@ -29,15 +29,13 @@
 namespace py = pybind11;
 
 __global__ void get_start_idx_kernel(
-    at::Half* array,
+    float* array,
     int* starting_idx,
     int total_x_tiles,
     int total_y_tiles,
     int array_length
 )
 {
-    
-
     // we are only going to use 1d blocks and 1d thread blocks
     int array_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (array_idx >= array_length)
@@ -93,7 +91,7 @@ torch::Tensor get_start_idx_cuda(
     dim3 grid_size((array_length + TILE_SIZE*TILE_SIZE - 1) / (TILE_SIZE*TILE_SIZE), 1);
     dim3 block_size(TILE_SIZE * TILE_SIZE, 1);
     get_start_idx_kernel<<<grid_size, block_size>>>(
-        array.data_ptr<at::Half>(),
+        array.data_ptr<float>(),
         starting_idx.data_ptr<int>(),
         total_x_tiles,
         total_y_tiles,
@@ -106,7 +104,7 @@ torch::Tensor get_start_idx_cuda(
 
 
 __global__ void create_key_to_tile_map_kernel(
-    at::Half* array,
+    float* array,
     float* means_3d,
     int64_t* prefix_sum,
     int* top_left,
@@ -140,14 +138,14 @@ __global__ void create_key_to_tile_map_kernel(
         );
     }
 #endif
-    float z_depth = means_3d[start_idx * 4 + 2];
+    float z_depth = means_3d[start_idx * 3 + 2];
 
     for (int x = top_left_x; x <= bottom_right_x; x++) {
         for (int y = top_left_y; y <= bottom_right_y; y++) {
-            array[4 * array_idx] = static_cast<at::Half>(x);
-            array[4 * array_idx + 1] = static_cast<at::Half>(y);
-            array[4 * array_idx + 2] = static_cast<at::Half>(z_depth);
-            array[4 * array_idx + 3] = static_cast<at::Half>(start_idx);
+            array[4 * array_idx] = static_cast<float>(x);
+            array[4 * array_idx + 1] = static_cast<float>(y);
+            array[4 * array_idx + 2] = static_cast<float>(z_depth);
+            array[4 * array_idx + 3] = static_cast<float>(start_idx);
             array_idx++;
         }
     }
@@ -173,7 +171,7 @@ torch::Tensor create_key_to_tile_map_cuda(
     dim3 grid_size((prefix_sum_length + TILE_SIZE*TILE_SIZE - 1) / (TILE_SIZE*TILE_SIZE), 1);
     dim3 block_size(TILE_SIZE * TILE_SIZE, 1);
     create_key_to_tile_map_kernel<<<grid_size, block_size>>>(
-        array.data_ptr<at::Half>(),
+        array.data_ptr<float>(),
         means_3d.data_ptr<float>(),
         prefix_sum.data_ptr<int64_t>(),
         top_left.data_ptr<int>(),

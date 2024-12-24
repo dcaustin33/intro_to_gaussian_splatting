@@ -191,7 +191,7 @@ class GaussianScene2(nn.Module):
         points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1) 
         points_ndc = points_ndc[:, :3]  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
-        points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
+        # points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
@@ -235,6 +235,9 @@ class GaussianScene2(nn.Module):
         Every entry for each gaussian should correspond to a tile touched.
         In this function we are denoting the tiles touched by the gaussian
         by the top left and bottom right of the tile.
+        
+        dims are:
+        x_index, y_index, z_depth, gaussian_index
         """
         start_idx = 0
         for idx in range(len(preprocessed_gaussians.tiles_touched)):
@@ -445,7 +448,7 @@ class GaussianScene2(nn.Module):
         print(math.ceil(width / tile_size), math.ceil(height / tile_size))
 
         array = torch.zeros(
-            (prefix_sum[-1], 4), device=self.device, dtype=torch.float16
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
         )
         # the first 32 bits will be the x_index of the tile
         # the next 32 bits will be the y_index of the tile
@@ -503,4 +506,4 @@ class GaussianScene2(nn.Module):
             len(preprocessed_gaussians.tiles_touched),
             array.shape[0],
         )
-        return image
+        return image, starting_indices, final_tile_indices, array_indices, array

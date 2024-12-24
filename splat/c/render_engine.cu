@@ -116,16 +116,16 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    int target_pixel_x = 208;
-    int target_pixel_y = 417;
+    int target_pixel_x = 0;
+    int target_pixel_y = 0;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
 #ifdef PRINT_DEBUG
-    if (tile_x != target_tile_x && tile_y != target_tile_y)
-    {
-        return;
-    }
+    // if (tile_x != target_tile_x && tile_y != target_tile_y)
+    // {
+    //     return;
+    // }
 #endif
 
     // then we have to load and if their tile does not match we indicate done in
@@ -137,11 +137,8 @@ __global__ void render_tile_kernel(
     float3 color = {0.0f, 0.0f, 0.0f};
     int num_done = 0;
 
-    // TODO: is this correct if width is x and height is y
-    // the trhead idx and the correct tile idx do it different ways
     int correct_tile_idx = tile_y * gridDim.x + tile_x;
     int thread_idx = threadIdx.x + threadIdx.y * blockDim.x;
-    // print the max thread idx
     shared_done_indicator[thread_idx] = false;
 
     if (starting_tile_indices[correct_tile_idx] == -1)
@@ -152,6 +149,7 @@ __global__ void render_tile_kernel(
     while (true)
     {
         __syncthreads();
+        shared_done_indicator[thread_idx] = false;
         num_done = __syncthreads_count(done);
         if (num_done == thread_dim)
             break;
@@ -222,6 +220,16 @@ __global__ void render_tile_kernel(
 
                     float opacity_output = sigmoid(shared_point_opacities[i]);
                     float alpha_value = min(0.99f, gaussian_strength * opacity_output);
+#ifdef PRINT_DEBUG
+                    if (pixel_x == target_pixel_x && pixel_y == target_pixel_y)
+                    {
+                        printf("alpha_value: %f\n", alpha_value);
+                    }
+#endif
+                    if (alpha_value < 1.0f / 255.0f)
+                    {
+                        continue;
+                    }
                     float test_T = total_weight * (1.0f - alpha_value);
 #ifdef PRINT_DEBUG
                     if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
@@ -234,7 +242,7 @@ __global__ void render_tile_kernel(
                                shared_point_colors[i * 3 + 2]);
                     }
 #endif
-                    if (test_T < 0.00001f)
+                    if (test_T < 0.0001f)
                     {
                         done = true;
                         continue;
