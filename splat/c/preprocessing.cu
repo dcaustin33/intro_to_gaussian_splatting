@@ -265,9 +265,10 @@ __global__ void get_3d_covariance_matrix_kernel(
     three_by_three_matrix_multiply(output1, scale_matrix, output2);
     float transpose_rotation_matrix[3][3] = {0};
     float covariance_3d[3][3] = {0};
+    three_by_three_matrix_transpose(rotation_matrix, transpose_rotation_matrix);
     three_by_three_matrix_multiply(
         output2,
-        three_by_three_matrix_transpose(rotation_matrix, transpose_rotation_matrix),
+        transpose_rotation_matrix,
         covariance_3d);
 
     covariance[idx * 9] = covariance_3d[0][0];
@@ -320,9 +321,9 @@ __global__ void get_2d_covariance_matrix_kernel(
         return;
     }
 
-    float x = points_homogeneous[idx * 3];
-    float y = points_homogeneous[idx * 3 + 1];
-    float z = points_homogeneous[idx * 3 + 2];
+    float x = points_homogeneous[idx * 4];
+    float y = points_homogeneous[idx * 4 + 1];
+    float z = points_homogeneous[idx * 4 + 2];
     float4 point_camera_space;
     point_camera_space.x = x * extrinsic_matrix[0] + y * extrinsic_matrix[4] + z * extrinsic_matrix[8] + extrinsic_matrix[12];
     point_camera_space.y = x * extrinsic_matrix[1] + y * extrinsic_matrix[5] + z * extrinsic_matrix[9] + extrinsic_matrix[13];
@@ -342,21 +343,18 @@ __global__ void get_2d_covariance_matrix_kernel(
     float y_clamped = clampf(point_camera_space.y, -1.3 * tan_fovY, 1.3 * tan_fovY) * point_camera_space.z;
 
     float j[3][3] = {
-        {focal_x / z, 0, -(focal_x * x_clamped) / (z * z)},
-        {0, focal_y / z, -(focal_y * y_clamped) / (z * z)},
+        {focal_x / point_camera_space.z, 0, -(focal_x * x_clamped) / (point_camera_space.z * point_camera_space.z)},
+        {0, focal_y / point_camera_space.z, -(focal_y * y_clamped) / (point_camera_space.z * point_camera_space.z)},
         {0, 0, 0}};
 
     float w[3][3] = {
         {extrinsic_matrix[0], extrinsic_matrix[1], extrinsic_matrix[2]},
-        {extrinsic_matrix[3], extrinsic_matrix[4], extrinsic_matrix[5]},
-        {extrinsic_matrix[6], extrinsic_matrix[7], extrinsic_matrix[8]}};
-    w[2][0] = extrinsic_matrix[6];
-    w[2][1] = extrinsic_matrix[7];
-    w[2][2] = extrinsic_matrix[8];
-
+        {extrinsic_matrix[4], extrinsic_matrix[5], extrinsic_matrix[6]},
+        {extrinsic_matrix[8], extrinsic_matrix[9], extrinsic_matrix[10]}};
     float t[3][3] = {0};
     float j_transpose[3][3] = {0};
-    three_by_three_matrix_multiply(w, three_by_three_matrix_transpose(j, j_transpose), t);
+    three_by_three_matrix_transpose(j, j_transpose);
+    three_by_three_matrix_multiply(w, j_transpose, t);
 
     float covariance_output1[3][3] = {0};
     float t_transpose[3][3] = {0};
@@ -364,7 +362,8 @@ __global__ void get_2d_covariance_matrix_kernel(
         {covariance_3d[idx * 9], covariance_3d[idx * 9 + 1], covariance_3d[idx * 9 + 2]},
         {covariance_3d[idx * 9 + 3], covariance_3d[idx * 9 + 4], covariance_3d[idx * 9 + 5]},
         {covariance_3d[idx * 9 + 6], covariance_3d[idx * 9 + 7], covariance_3d[idx * 9 + 8]}};
-    three_by_three_matrix_multiply(three_by_three_matrix_transpose(t, t_transpose), kernel_covariance, covariance_output1);
+    three_by_three_matrix_transpose(t, t_transpose);
+    three_by_three_matrix_multiply(t_transpose, kernel_covariance, covariance_output1);
     float covariance_output2[3][3] = {0};
     three_by_three_matrix_multiply(covariance_output1, t, covariance_output2);
 

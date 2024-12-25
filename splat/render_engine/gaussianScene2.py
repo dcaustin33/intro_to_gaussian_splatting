@@ -56,6 +56,10 @@ class GaussianScene2(nn.Module):
         # overall formula for a normal extrinsic matrix is
         w = extrinsic_matrix[:3, :3]
         t = w @ j.transpose(1, 2)
+        # print("t: ", t)
+        # print("j: ", j)
+        # print("w: ", w)
+        # print("covariance_3d: ", covariance_3d)
         covariance2d = (
             t.transpose(1, 2)
             @ covariance_3d.transpose(1, 2)  # doesnt this not do anything?
@@ -174,32 +178,21 @@ class GaussianScene2(nn.Module):
             dim=1,
         )  # Nx4
 
-        covariance3d = self.gaussians.get_3d_covariance_matrix().to(self.device)
-        covariance3d_cuda_native = preprocessing.get_3d_covariance_matrix_cuda(
+        covariance3d = preprocessing.get_3d_covariance_matrix_cuda(
             self.gaussians.quaternions, self.gaussians.scales
-        )
-        import pdb; pdb.set_trace()
-
-        covariance2d, points_camera_space = self.compute_2d_covariance(
-            points_homogeneous.contiguous(),
-            covariance3d.contiguous(),
-            extrinsic_matrix.to(self.device),
-            tan_fovX,
-            tan_fovY,
-            focal_x,
-            focal_y,
-        )
-        covariance2d_cuda_native, points_camera_space_cuda_native = (
+        ).view(-1, 3, 3)
+        covariance2d, points_camera_space = (
             preprocessing.get_2d_covariance_matrix_cuda(
                 points_homogeneous.contiguous(),
-                covariance3d_cuda_native,
-                extrinsic_matrix.to(self.device),
+                covariance3d,
+                extrinsic_matrix.to(self.device).contiguous(),
                 tan_fovX,
                 tan_fovY,
                 focal_x,
                 focal_y,
             )
         )
+        covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
@@ -517,4 +510,4 @@ class GaussianScene2(nn.Module):
             len(preprocessed_gaussians.tiles_touched),
             array.shape[0],
         )
-        return image, starting_indices, final_tile_indices, array_indices, array
+        return image

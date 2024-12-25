@@ -1,7 +1,10 @@
+import cv2
+import numpy as np
 import pycolmap
 import torch
 import torch.cuda
 from tqdm import tqdm
+
 from splat.image import GaussianImage
 from splat.read_utils.read_gs_ply_files import convert_to_gaussian_schema, read_ply_file
 from splat.render_engine.gaussianScene2 import GaussianScene2
@@ -35,6 +38,7 @@ def get_image_info(image_num, image_dict, camera_dict):
 
 
 if __name__ == "__main__":
+    output_image_path = "/home/da2986/intro_to_gaussian_splatting/output_images"
     stem = "/home/da2986/intro_to_gaussian_splatting"
     models_path = "/home/da2986/intro_to_gaussian_splatting/models"
     ply_path = f"/home/da2986/gaussian-splatting/truck/point_cloud/iteration_30000/point_cloud.ply"
@@ -98,7 +102,7 @@ if __name__ == "__main__":
             render_end = torch.cuda.Event(enable_timing=True)
             render_start.record()
 
-            output_image, starting_indices, final_tile_indices, array_indices, array = scene.render_cuda(
+            output_image = scene.render_cuda(
                 preprocessed_gaussians=processed_gaussians, height=height, width=width, tile_size=TILE_SIZE
             )
 
@@ -106,6 +110,13 @@ if __name__ == "__main__":
             torch.cuda.synchronize()
             render_time = render_start.elapsed_time(render_end)
             total_render_time += render_time
+
+        temp_output_image_path = f"{output_image_path}/image_{image_num}.png"
+        print(f"Saving image to {temp_output_image_path}")
+        output_image = output_image.cpu().numpy()
+        output_image = (output_image * 255).astype(np.uint8)
+        output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(temp_output_image_path, output_image)
 
     print(f"Total preprocessing time: {total_preprocess_time:.2f} ms")
     print(f"Total rendering time: {total_render_time:.2f} ms")
