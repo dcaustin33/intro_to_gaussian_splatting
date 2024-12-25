@@ -210,7 +210,6 @@ class GaussianScene2(nn.Module):
 
         top_left = torch.stack([top_left[0], top_left[1]]).to(self.device)
         bottom_right = torch.stack([bottom_right[0], bottom_right[1]]).to(self.device)
-        print(top_left.shape, bottom_right.shape)
         return PreprocessedGaussian(
             means_3d=points_ndc,
             covariance_2d=covariance2d,
@@ -356,9 +355,7 @@ class GaussianScene2(nn.Module):
             height = 32
             width = 16
 
-        print("starting sum")
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
-        print("ending sum")
 
         array = torch.zeros(
             (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
@@ -384,7 +381,6 @@ class GaussianScene2(nn.Module):
         target_pixel_y = 500
         target_tile_x = target_pixel_x // 16
         target_tile_y = target_pixel_y // 16
-        print(target_tile_x, target_tile_y)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
@@ -444,8 +440,6 @@ class GaussianScene2(nn.Module):
             width = 16
 
         prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
-
-        print(math.ceil(width / tile_size), math.ceil(height / tile_size))
 
         array = torch.zeros(
             (prefix_sum[-1], 4), device=self.device, dtype=torch.float32

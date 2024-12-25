@@ -1,10 +1,7 @@
-import numpy as np
 import pycolmap
 import torch
-import torch.nn as nn
 import torch.cuda
-
-from splat.gaussians import Gaussians
+from tqdm import tqdm
 from splat.image import GaussianImage
 from splat.read_utils.read_gs_ply_files import convert_to_gaussian_schema, read_ply_file
 from splat.render_engine.gaussianScene2 import GaussianScene2
@@ -15,7 +12,6 @@ from splat.utils import (
     read_camera_file,
     read_image_file,
     read_images_binary,
-    read_images_text,
 )
 
 
@@ -69,7 +65,7 @@ if __name__ == "__main__":
     total_preprocess_time = 0
     total_render_time = 0
 
-    for image_num in images.keys():
+    for image_num in tqdm(images.keys()):
         extrinsic_matrix, intrinsic_matrix, height, width, focal_x, focal_y = (
             get_image_info(image_num, image_dict, camera_dict)
         )
@@ -113,3 +109,9 @@ if __name__ == "__main__":
 
     print(f"Total preprocessing time: {total_preprocess_time:.2f} ms")
     print(f"Total rendering time: {total_render_time:.2f} ms")
+
+    print(f"Preprocessing time (seconds) per image: {total_preprocess_time / 1000 / len(images):.2f}")
+    print(f"Rendering time (seconds) per image: {total_render_time / 1000 / len(images):.2f}")
+    
+    print(f"Preprocessing time (ms) per image: {total_preprocess_time / len(images):.2f}")
+    print(f"Rendering time (ms) per image: {total_render_time / len(images):.2f}")
