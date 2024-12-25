@@ -31,9 +31,7 @@ setup(
             ],
             extra_compile_args={
                 'nvcc': [
-                    '-O3',  # No optimization
-                    # "-G",
-                    # "-g",
+                    '-O3',
                     '-std=c++17',
                     '-Xcompiler', '-fPIC',
                     '-arch=sm_61',
@@ -41,15 +39,6 @@ setup(
                 'cxx': ['-O3', '-std=c++17'],  # No optimization
             },
         ),
-        # Extension(
-        #     "splat.c.test_add",
-        #     ["splat/c/test.cpp"],
-        #     include_dirs=[
-        #         pybind11.get_include(),
-        #     ],
-        #     language='c++',
-        #     extra_compile_args=['-O3', '-std=c++17'],
-        # ),
     ],
     cmdclass={'build_ext': BuildExtension},
 )
