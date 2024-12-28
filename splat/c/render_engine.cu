@@ -315,7 +315,6 @@ torch::Tensor render_tile_cuda(
     torch::Tensor image_new = torch::ones({image_height, image_width, 3}, image.options());
 
     // print the amount of elements in image tensor
-    printf("Number of elements in image tensor: %zu\n", image.numel());
     render_tile_kernel<<<grid_size, block_size>>>(
         tile_size,
         point_means.data_ptr<float>(),

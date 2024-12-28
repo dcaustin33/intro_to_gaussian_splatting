@@ -47,19 +47,22 @@ class GaussianScene2(nn.Module):
         z = points_camera_space[:, 2]
         j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(self.device)
         j[:, 0, 0] = focal_x / z
-        j[:, 0, 2] = -(focal_x * x) / (z ** 2)
+        j[:, 0, 2] = -(focal_x * x) / (z**2)
         j[:, 1, 1] = focal_y / z
-        j[:, 1, 2] = -(focal_y * y) / (z ** 2)
+        j[:, 1, 2] = -(focal_y * y) / (z**2)
 
         # we assume our extrinsic matrix has the translation in the last row
         # so it is already transposed so we transpose back
         # overall formula for a normal extrinsic matrix is
-        # J @ W @ covariance_3d @ W.T @ J.T
         w = extrinsic_matrix[:3, :3]
         t = w @ j.transpose(1, 2)
+        # print("t: ", t)
+        # print("j: ", j)
+        # print("w: ", w)
+        # print("covariance_3d: ", covariance_3d)
         covariance2d = (
             t.transpose(1, 2)
-            @ covariance_3d.transpose(1, 2) # doesnt this not do anything?
+            @ covariance_3d.transpose(1, 2)  # doesnt this not do anything?
             @ t
         )
         # scale by 0.3 for the covariance and numerical stability on the diagonal
@@ -175,20 +178,24 @@ class GaussianScene2(nn.Module):
             dim=1,
         )  # Nx4
 
-        covariance3d = self.gaussians.get_3d_covariance_matrix().to(self.device)
-
-        covariance2d, points_camera_space = self.compute_2d_covariance(
-            points_homogeneous,
-            covariance3d,
-            extrinsic_matrix.to(self.device),
-            tan_fovX,
-            tan_fovY,
-            focal_x,
-            focal_y,
+        covariance3d = preprocessing.get_3d_covariance_matrix_cuda(
+            self.gaussians.quaternions, self.gaussians.scales
+        ).view(-1, 3, 3)
+        covariance2d, points_camera_space = (
+            preprocessing.get_2d_covariance_matrix_cuda(
+                points_homogeneous.contiguous(),
+                covariance3d,
+                extrinsic_matrix.to(self.device).contiguous(),
+                tan_fovX,
+                tan_fovY,
+                focal_x,
+                focal_y,
+            )
         )
+        covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
-        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1) 
+        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
         points_ndc = points_ndc[:, :3]  # nx3
         points_in_view_bool_array = self.filter_in_view(points_ndc)
         # points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
@@ -210,7 +217,6 @@ class GaussianScene2(nn.Module):
 
         top_left = torch.stack([top_left[0], top_left[1]]).to(self.device)
         bottom_right = torch.stack([bottom_right[0], bottom_right[1]]).to(self.device)
-        print(top_left.shape, bottom_right.shape)
         return PreprocessedGaussian(
             means_3d=points_ndc,
             covariance_2d=covariance2d,
@@ -235,7 +241,7 @@ class GaussianScene2(nn.Module):
         Every entry for each gaussian should correspond to a tile touched.
         In this function we are denoting the tiles touched by the gaussian
         by the top left and bottom right of the tile.
-        
+
         dims are:
         x_index, y_index, z_depth, gaussian_index
         """
@@ -356,9 +362,9 @@ class GaussianScene2(nn.Module):
             height = 32
             width = 16
 
-        print("starting sum")
-        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
-        print("ending sum")
+        prefix_sum = torch.cumsum(
+            preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0
+        )
 
         array = torch.zeros(
             (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
@@ -384,7 +390,6 @@ class GaussianScene2(nn.Module):
         target_pixel_y = 500
         target_tile_x = target_pixel_x // 16
         target_tile_y = target_pixel_y // 16
-        print(target_tile_x, target_tile_y)
 
         for idx in tqdm.tqdm(range(len(array))):
             # you render for all the tiles the gaussian will touch
@@ -443,9 +448,9 @@ class GaussianScene2(nn.Module):
             height = 32
             width = 16
 
-        prefix_sum = torch.cumsum(preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0)
-
-        print(math.ceil(width / tile_size), math.ceil(height / tile_size))
+        prefix_sum = torch.cumsum(
+            preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0
+        )
 
         array = torch.zeros(
             (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
@@ -477,9 +482,8 @@ class GaussianScene2(nn.Module):
             math.ceil(width / tile_size),
             math.ceil(height / tile_size),
         )
-        
-        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
 
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
 
         tile_indices = array[:, 0:2].int()
         array_indices = array[:, 3].int()
@@ -506,4 +510,4 @@ class GaussianScene2(nn.Module):
             len(preprocessed_gaussians.tiles_touched),
             array.shape[0],
         )
-        return image, starting_indices, final_tile_indices, array_indices, array
+        return image
