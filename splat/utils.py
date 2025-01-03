@@ -225,7 +225,7 @@ def getProjectionMatrix(
     return P
 
 
-def getIntinsicMatrix(
+def getIntrinsicMatrix(
     focal_x: torch.Tensor,
     focal_y: torch.Tensor,
     height: torch.Tensor,
