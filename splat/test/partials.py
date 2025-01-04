@@ -89,6 +89,70 @@ def d_world_to_camera(extrinsic_matrix: torch.Tensor) -> torch.Tensor:
     """
     return extrinsic_matrix.T
 
+def d_inv_covariance_wrt_covariance_a(covariance: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the derivative of inv_covariance wrt covariance
+    covariance is nx2x2
+    Output is nx1
+    """
+    a = covariance[:, 0, 0]
+    b = covariance[:, 0, 1]
+    c = covariance[:, 1, 1]
+
+    det_squared = (a * c - b**2)**2
+    first_component = (-c**2) / det_squared
+    second_component = 2* ((b* c) / det_squared)
+    third_component = (-b**2) / det_squared
+    return first_component + second_component + third_component
+
+def d_inv_covariance_wrt_covariance_b(covariance: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the derivative of inv_covariance wrt covariance
+    covariance is nx2x2
+    Output is nx1
+    """
+    a = covariance[:, 0, 0]
+    b = covariance[:, 0, 1]
+    c = covariance[:, 1, 1]
+
+    det_squared = (a * c - b**2)**2
+    first_component = (2*b*c) / det_squared
+    second_component = 2 * ((-a*c - b*b) / det_squared)
+    third_component = (2*a*b) / det_squared
+    return first_component + second_component + third_component
+
+def d_inv_covariance_wrt_covariance_c(covariance: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the derivative of inv_covariance wrt covariance
+    covariance is nx2x2
+    Output is nx1
+    """
+    a = covariance[:, 0, 0]
+    b = covariance[:, 0, 1]
+    c = covariance[:, 1, 1]
+
+    det_squared = (a * c - b**2)**2
+    first_component = (-b*b) / det_squared
+    second_component = 2 * ((a*b) / det_squared)
+    third_component = (-a*a) / det_squared
+    return first_component + second_component + third_component
+
+def d_inv_covariance_wrt_covariance(covariance: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the derivative of inv_covariance wrt covariance
+    covariance is nx2x2
+    Output is nx2x2
+    """
+    d_wrt_a = d_inv_covariance_wrt_covariance_a(covariance)
+    d_wrt_b = d_inv_covariance_wrt_covariance_b(covariance)
+    d_wrt_c = d_inv_covariance_wrt_covariance_c(covariance)
+    result = torch.zeros((covariance.shape[0], 2, 2), device=covariance.device)
+    result[:, 0, 0] = d_wrt_a
+    result[:, 0, 1] = d_wrt_b 
+    result[:, 1, 0] = d_wrt_b
+    result[:, 1, 1] = d_wrt_c
+    return result
+
 
 def extract_gaussian_weight(
     pixel: torch.Tensor,
@@ -220,19 +284,18 @@ class pixelCoordToColor(torch.autograd.Function):
         color, inv_covariance_2d, current_T, opacity, gaussian_weight, diff, alpha, actual_weight = (
             ctx.saved_tensors
         )
-        derivative = d_color_wrt_alpha(color, current_T).view(-1, 3, 1)
+        derivative = (grad_output * d_color_wrt_alpha(color, current_T).view(-1, 3)).sum(dim=1, keepdim=True)
         derivative = derivative * d_alpha_wrt_gaussian_strength(opacity).unsqueeze(1)
         derivative = derivative * d_gaussian_strength_wrt_gaussian_weight(
             gaussian_weight
-        ).unsqueeze(1)
-        derivative = torch.bmm(
-            derivative,
-            d_gaussian_weight_wrt_diff(diff, inv_covariance_2d).transpose(1, 2),
         )
+        derivative = derivative * d_gaussian_weight_wrt_diff(diff, inv_covariance_2d).transpose(1, 2)
         derivative = torch.bmm(derivative, d_diff_wrt_mean(diff.shape[0]))
-        gradient = torch.bmm(grad_output.unsqueeze(1), derivative).squeeze(1)
+        # commenting this out for now but summing above does lead to some precision differences with autograd
+        # think they are equivalent but z coord grad is a little off
+        # gradient = torch.bmm(grad_output.unsqueeze(1), derivative).squeeze(1)
         color_gradient = grad_output * (current_T * alpha)
-        # import pdb; pdb.set_trace()
+
         opacity_gradient = (grad_output * (color * current_T)).sum(dim=1, keepdim=True)
         opacity_gradient *= actual_weight * (torch.sigmoid(opacity) * (1 - torch.sigmoid(opacity)))
-        return None, gradient, color_gradient, None, None, opacity_gradient.sum(dim=0)
+        return None, derivative, color_gradient, None, None, opacity_gradient.sum(dim=0)
