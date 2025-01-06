@@ -129,12 +129,14 @@ def inverse_sigmoid(x: torch.Tensor) -> torch.Tensor:
     return torch.log(x / (1 - x))
 
 
-def build_rotation(r: torch.Tensor) -> torch.Tensor:
-    norm = torch.sqrt(
-        r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
-    )
-
-    q = r / norm[:, None]
+def build_rotation(r: torch.Tensor, normalize: bool = True) -> torch.Tensor:
+    if normalize:
+        norm = torch.sqrt(
+            r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
+        )
+        q = r / norm[:, None]
+    else:
+        q = r
 
     R = torch.zeros((q.size(0), 3, 3), device=r.device, dtype=r.dtype)
 

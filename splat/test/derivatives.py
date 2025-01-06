@@ -1,7 +1,6 @@
 import torch
 
-from splat.utils import ndc2Pix
-from splat.utils import build_rotation
+from splat.utils import build_rotation, ndc2Pix
 
 
 def d_color_wrt_alpha(C: torch.Tensor, T_at_the_time: torch.Tensor) -> torch.Tensor:
@@ -248,6 +247,29 @@ def d_r_wrt_qj(quats: torch.Tensor, n: int) -> torch.Tensor:
     derivative[:, 2, 2] = -2 * qj
     return 2 * derivative
 
+def d_r_wrt_qk(quats: torch.Tensor, n: int) -> torch.Tensor:
+    """
+    Compute the derivative of m wrt quats
+    quats is nx4 tensor
+    shape is nx3 tensor
+    """
+    qr = quats[:, 0]
+    qi = quats[:, 1]
+    qj = quats[:, 2]
+    qk = quats[:, 3]
+
+    derivative = torch.zeros((n, 3, 3))
+    derivative[:, 0, 0] = -2 * qk
+    derivative[:, 0, 1] = -qr
+    derivative[:, 0, 2] = qi
+    derivative[:, 1, 0] = qr
+    derivative[:, 1, 1] = -2*qk
+    derivative[:, 1, 2] = qj
+    derivative[:, 2, 0] = qi
+    derivative[:, 2, 1] = qj
+    derivative[:, 2, 2] = 0
+    return 2 * derivative
+
 
 def extract_gaussian_weight(
     pixel: torch.Tensor,
@@ -432,6 +454,7 @@ class quatsToR(torch.autograd.Function):
         deriv_wrt_qr = d_r_wrt_qr(quats, quats.shape[0])
         deriv_wrt_qi = d_r_wrt_qi(quats, quats.shape[0])
         deriv_wrt_qj = d_r_wrt_qj(quats, quats.shape[0])
+        deriv_wrt_qk = d_r_wrt_qk(quats, quats.shape[0])
 
         deriv_wrt_qr = (
             (grad_output * deriv_wrt_qr).sum(dim=(1, 2), keepdim=True).squeeze(2)
@@ -442,7 +465,27 @@ class quatsToR(torch.autograd.Function):
         deriv_wrt_qj = (
             (grad_output * deriv_wrt_qj).sum(dim=(1, 2), keepdim=True).squeeze(2)
         )
+        deriv_wrt_qk = torch
         return torch.cat(
             [deriv_wrt_qr, deriv_wrt_qi, deriv_wrt_qj, torch.zeros_like(deriv_wrt_qr)],
             dim=1,
         )
+
+class quats_scales_to_M(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, quats: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
+        R = quatsToR(quats)  # Calculate R first
+        M = R @ scales
+        ctx.save_for_backward(scales, R)  # Save R as well
+        return M
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor) -> torch.Tensor:
+        scales, R = ctx.saved_tensors
+        # Gradient for scales: R^T @ grad_output
+        grad_scales = torch.bmm(R.transpose(1, 2), grad_output)
+        # Gradient for quats: grad_output @ scales^T -> quatsToR.backward
+        grad_R = torch.bmm(grad_output, scales.transpose(1, 2))
+        grad_quats = quatsToR.apply(grad_R)
+        return grad_quats, grad_scales
+
