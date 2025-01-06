@@ -14,7 +14,7 @@ from splat.utils import (
     read_image_file,
     read_images_binary,
 )
-from splat.test.partials import get_matrices
+from splat.test.derivatives import get_matrices
 
 if __name__ == "__main__":
     ply_path = "/Users/derek/Desktop/intro_to_gaussian_splatting/data/truck/point_cloud/iteration_30000/point_cloud.ply"

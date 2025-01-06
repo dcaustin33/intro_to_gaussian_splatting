@@ -1,7 +1,7 @@
 import torch
 
 from splat.test.create_image_cpu import Camera, Gaussian, compute_2d_covariance
-from splat.test.partials import gaussianMeanToPixels, pixelCoordToColor
+from splat.test.derivatives import gaussianMeanToPixels, pixelCoordToColor
 
 
 def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
