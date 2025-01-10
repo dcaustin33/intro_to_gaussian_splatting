@@ -107,23 +107,26 @@ class invert_2x2_matrix(torch.autograd.Function):
 
 class covariance_3d_to_covariance_2d(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, covariance_3d: torch.Tensor, M: torch.Tensor):
+    def forward(ctx, covariance_3d: torch.Tensor, U: torch.Tensor):
         """
         Covariance 3d is the nx3x3 covariance matrix.
-        M is the J@W.T matrix. this is a 3x3 matrix
-        To get the covariance 2d we do M.T @ covariance_3d @ M
+        U is the J@W.T matrix. this is a 3x3 matrix
+        To get the covariance 2d we do U.T @ covariance_3d @ U
         """
-        first_mult = M.transpose(0, 1) @ covariance_3d
-        second_mult = first_mult @ M
-        ctx.save_for_backward(M)
+        if U.shape[0] == 1:
+            U = U.squeeze(0)
+        first_mult = torch.einsum("ij,njk->nik", U.transpose(0, 1), covariance_3d)
+        # second_mult = first_mult @ U
+        second_mult = torch.einsum("nij,jk->nik", first_mult, U)
+        ctx.save_for_backward(U)
         return second_mult
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
-        (M,) = ctx.saved_tensors
+        (U,) = ctx.saved_tensors
 
         # Derivative of (M^T * C * M) w.r.t. C = M * grad_output * M^T
-        grad_cov3d = M @ grad_output @ M.transpose(0, 1)
+        grad_cov3d = U @ grad_output @ U.transpose(0, 1)
         return grad_cov3d, None
 
 
@@ -145,6 +148,7 @@ class R_S_To_M(torch.autograd.Function):
 class M_To_Covariance(torch.autograd.Function):
     @staticmethod
     def forward(ctx, M: torch.Tensor):
+        """Normal would be M@M.T but equivalent for our scenario"""
         ctx.save_for_backward(M)
         return M.pow(2)
 
@@ -319,3 +323,19 @@ class scale_to_s_matrix(torch.autograd.Function):
         deriv_wr_s2 = grad_output[:, 1, 1].view(-1, 1)
         deriv_wr_s3 = grad_output[:, 2, 2].view(-1, 1)
         return torch.cat([deriv_wr_s1, deriv_wr_s2, deriv_wr_s3], dim=1)
+
+
+def r_s_to_cov_2d(r: torch.Tensor, s: torch.Tensor, U: torch.Tensor):
+     """
+     r is a unnormalized nx4 tensor, s is a nx3 tensor
+     U is the J@W matrix. this is a 3x3 matrix.
+     In our example its W.t since we are using the OpenGL convention
+     """
+     r = normalize_quats.apply(r)
+     R = quats_to_R.apply(r)
+     S = scale_to_s_matrix.apply(s)
+     M = R_S_To_M.apply(R, S)
+     cov_3d = M_To_Covariance.apply(M)
+     cov_2d = covariance_3d_to_covariance_2d.apply(cov_3d, U)
+     inv_cov_2d = invert_2x2_matrix.apply(cov_2d[:, :2, :2])
+     return inv_cov_2d

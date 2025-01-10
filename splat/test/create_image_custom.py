@@ -1,6 +1,13 @@
 import torch
 
-from splat.test.create_image_cpu import Camera, Gaussian, compute_2d_covariance
+from splat.test.checked_covariance_derivatives import r_s_to_cov_2d
+from splat.test.create_image_auto import (
+    Camera,
+    Gaussian,
+    Gaussian_Covariance_Test,
+    compute_2d_covariance,
+    compute_j_w_matrix,
+)
 from splat.test.derivatives import gaussianMeanToPixels, pixelCoordToColor
 
 
@@ -39,3 +46,33 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
                 gaussian.opacity,
             )
     return image, point_ndc
+
+
+def create_image_covariance_test(camera: Camera, gaussian: Gaussian_Covariance_Test, height: int, width: int):
+    """
+    Camera gives the internal and the external matrices.
+    Gaussian_Covariance_Test gives the mean_2d, r, s, color, opacity
+        Note the mean here has a third dimension for the depth needed for J
+    height and width are the dimensions of the image
+    """
+    image = torch.zeros((height, width, 3))
+    r = gaussian.r
+    s = gaussian.s
+    mean_2d = gaussian.mean_2d
+    color = gaussian.color
+    opacity = gaussian.opacity
+
+    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
+    for i in range(height):
+        for j in range(width):
+            image[i, j] = pixelCoordToColor.apply(
+                torch.tensor([[i, j]]),
+                mean_2d[:, :2],
+                color,
+                covariance_2d,
+                torch.tensor(1.0),
+                opacity,
+            )
+
+    return image

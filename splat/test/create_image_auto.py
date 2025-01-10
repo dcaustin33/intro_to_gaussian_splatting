@@ -6,11 +6,13 @@ Renders on the CPU and uses pytorch backprop.
 
 import math
 from dataclasses import dataclass
+from typing import Tuple
 
 import torch
 from matplotlib import pyplot as plt
 
 from splat.render_engine.utils import compute_fov_from_focal
+from splat.test.auto_functions import r_s_to_cov_2d_auto
 from splat.utils import build_rotation, get_extrinsic_matrix, getIntrinsicMatrix
 
 
@@ -24,6 +26,14 @@ class Gaussian:
     @property
     def homogeneous_points(self):
         return torch.cat([self.mean, torch.ones(1, 1)], dim=1)
+    
+@dataclass
+class Gaussian_Covariance_Test:
+    mean_2d: torch.Tensor # but has a third dimension for the depth needed for J
+    r: torch.Tensor
+    s: torch.Tensor
+    color: torch.Tensor
+    opacity: float
     
 @dataclass
 class Camera:
@@ -66,14 +76,26 @@ class Camera:
         return math.tan(self.fovY / 2)
 
 
-from typing import Tuple
-
-
 def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
     """
     Convert points from NDC to pixel coordinates
     """
     return (points + 1) * (dimension - 1) * 0.5
+
+
+def compute_j_w_matrix(camera: Camera, points_2d: torch.Tensor):
+    """
+    points_2d is a nx3 tensor where the last dimension is the depth
+    We are expecting the points to already be in camera space
+    """
+    j = torch.zeros((points_2d.shape[0], 3, 3))
+    j[:, 0, 0] = camera.focal_x / points_2d[:, 2]
+    j[:, 0, 2] = -(camera.focal_x * points_2d[:, 0]) / (points_2d[:, 2] ** 2)
+    j[:, 1, 1] = camera.focal_y / points_2d[:, 2]
+    j[:, 1, 2] = -(camera.focal_y * points_2d[:, 1]) / (points_2d[:, 2] ** 2)
+    w = camera.extrinsic_matrix[:3, :3]
+    return j @ w.transpose(0, 1)
+
 
 def compute_2d_covariance(
     points_homogeneous: torch.Tensor,
@@ -191,4 +213,29 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
                 1.0
             )[0]
     return image, point_ndc
-    
+
+
+def create_image_covariance_test_auto(camera: Camera, gaussian: Gaussian_Covariance_Test, height: int, width: int):
+    image = torch.zeros((height, width, 3))
+    r = gaussian.r
+    s = gaussian.s
+    mean_2d = gaussian.mean_2d
+    color = gaussian.color
+    opacity = gaussian.opacity
+
+    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
+    print("r_s_to_cov_2d", r_s_to_cov_2d)
+
+    for i in range(height):
+        for j in range(width):
+            image[i, j] = render_pixel(
+                i, 
+                j, 
+                mean_2d[:, :2], 
+                r_s_to_cov_2d, 
+                opacity, 
+                color, 
+                1.0
+            )[0]
+    return image
