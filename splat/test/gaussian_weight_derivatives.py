@@ -99,28 +99,30 @@ def render_pixel_custom(
     color_output = final_color.apply(color, current_T, alpha)
     return color_output
 
+
 class mean_3d_to_camera_space(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean_3d: torch.Tensor, extrinsic_matrix: torch.Tensor):
         ctx.save_for_backward(extrinsic_matrix)
-        return torch.einsum("jk, nkh->njh", extrinsic_matrix, mean_3d)
+        return torch.einsum("nk, kh->nh", mean_3d, extrinsic_matrix)
     
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         extrinsic_matrix = ctx.saved_tensors[0]
-        mean_3d_grad = torch.einsum("ih,nhj->nij", extrinsic_matrix.transpose(0, 1), grad_output)
+        mean_3d_grad = torch.einsum("nh,hj->nj", grad_output, extrinsic_matrix.transpose(0, 1))
         return mean_3d_grad, None
     
+
 class camera_space_to_pixel_space(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean_3d: torch.Tensor, intrinsic_matrix: torch.Tensor):
         ctx.save_for_backward(intrinsic_matrix)
-        return torch.einsum("jk, nkh->njh", intrinsic_matrix, mean_3d)
+        return torch.einsum("nk, kh->nh", mean_3d, intrinsic_matrix)
     
     @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
+    def backward(ctx, grad_output: torch.Tensor):   
         intrinsic_matrix = ctx.saved_tensors[0]
-        mean_3d_grad = torch.einsum("ih,nhj->nij", intrinsic_matrix.transpose(0, 1), grad_output)
+        mean_3d_grad = torch.einsum("nh,hj->nj", grad_output, intrinsic_matrix.transpose(0, 1))
         return mean_3d_grad, None
     
 class ndc_to_pixels(torch.autograd.Function):

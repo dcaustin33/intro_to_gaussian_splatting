@@ -83,13 +83,16 @@ def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, wi
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
-    mean_3d = gaussian.mean_3d
+    mean_3d = gaussian.homogeneous_points
+
     camera_space_mean = mean_3d_to_camera_space.apply(mean_3d, camera.extrinsic_matrix)
     pixel_space_mean = camera_space_to_pixel_space.apply(camera_space_mean, camera.intrinsic_matrix)
     new_pixel_space_mean = pixel_space_mean[:, :3] / pixel_space_mean[:, 3].unsqueeze(1)
     final_pixel_space_mean = torch.cat([new_pixel_space_mean, pixel_space_mean[:, 3].unsqueeze(1)], dim=1)
-    ndc_to_pixels = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
-    import pdb; pdb.set_trace()
+    pixel_mean = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
+    
+    final_coords = torch.cat([pixel_mean[:, :2], pixel_mean[:, 3].unsqueeze(1)], dim=1)
+    print("final_coords", final_coords)
     color = gaussian.color
     opacity = gaussian.opacity
     j_w_matrix = compute_j_w_matrix(camera, mean_3d)
@@ -98,7 +101,7 @@ def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, wi
         for j in range(width):
             image[i, j] = render_pixel_custom(
                 torch.tensor([i, j]),
-                mean_2d[:, :2],
+                final_coords[:, :2],
                 covariance_2d,
                 opacity,
                 color,
