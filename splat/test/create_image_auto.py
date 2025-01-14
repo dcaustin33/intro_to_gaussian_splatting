@@ -29,11 +29,15 @@ class Gaussian_no_r_s:
 
 @dataclass
 class Gaussian:
-    mean_2d: torch.Tensor  # but has a third dimension for the depth needed for J
+    mean_3d: torch.Tensor  # but has a third dimension for the depth needed for J
     r: torch.Tensor
     s: torch.Tensor
     color: torch.Tensor
     opacity: float
+
+    @property
+    def homogeneous_points(self):
+        return torch.cat([self.mean_3d, torch.ones(1, 1)], dim=1)
 
 
 @dataclass
@@ -258,14 +262,24 @@ def create_image_full_auto(
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
-    mean_2d = gaussian.mean_2d
+    mean_3d = gaussian.mean_3d
+    mean_2d = gaussian.homogeneous_points @ camera.extrinsic_matrix @ camera.intrinsic_matrix
+
+    new_means_2d = mean_2d[:, :2] / mean_2d[:, 3].unsqueeze(1)
+    next_mean_2d = torch.cat([new_means_2d, mean_2d[:, 3].unsqueeze(1)], dim=1)
+
+    pixel_x = ndc2Pix(next_mean_2d[:, 0], dimension=width)
+    pixel_y = ndc2Pix(next_mean_2d[:, 1], dimension=height)
+
+    final_mean_2d = torch.cat([pixel_x.view(-1, 1), pixel_y.view(-1, 1), next_mean_2d[:, 2].view(-1, 1)], dim=1)
+    print("final_mean_2d", final_mean_2d)
     color = gaussian.color
     opacity = gaussian.opacity
-    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    j_w_matrix = compute_j_w_matrix(camera, mean_3d)
     r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
             image[i, j] = render_pixel_auto(
-                torch.tensor([i, j]), mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
+                torch.tensor([i, j]), final_mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
             )[0]
     return image

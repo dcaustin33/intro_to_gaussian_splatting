@@ -98,3 +98,51 @@ def render_pixel_custom(
     alpha = get_alpha.apply(g_strength, opacity)
     color_output = final_color.apply(color, current_T, alpha)
     return color_output
+
+class mean_3d_to_camera_space(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, mean_3d: torch.Tensor, extrinsic_matrix: torch.Tensor):
+        ctx.save_for_backward(extrinsic_matrix)
+        return torch.einsum("jk, nkh->njh", extrinsic_matrix, mean_3d)
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        extrinsic_matrix = ctx.saved_tensors[0]
+        mean_3d_grad = torch.einsum("ih,nhj->nij", extrinsic_matrix.transpose(0, 1), grad_output)
+        return mean_3d_grad, None
+    
+class camera_space_to_pixel_space(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, mean_3d: torch.Tensor, intrinsic_matrix: torch.Tensor):
+        ctx.save_for_backward(intrinsic_matrix)
+        return torch.einsum("jk, nkh->njh", intrinsic_matrix, mean_3d)
+    
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        intrinsic_matrix = ctx.saved_tensors[0]
+        mean_3d_grad = torch.einsum("ih,nhj->nij", intrinsic_matrix.transpose(0, 1), grad_output)
+        return mean_3d_grad, None
+    
+class ndc_to_pixels(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, ndc: torch.Tensor, dimension: list):
+        """ndc is a nx3 tensor where the last dimension is the z component
+        
+        dimension are the height and width of the image
+        """
+        ctx.save_for_backward(torch.tensor(dimension))
+        ndc = ndc.clone()  # To avoid modifying input in-place
+        ndc[:, 0] = (ndc[:, 0] + 1) * (dimension[1] - 1) * 0.5
+        ndc[:, 1] = (ndc[:, 1] + 1) * (dimension[0] - 1) * 0.5
+        return ndc
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        dimension = ctx.saved_tensors[0]
+        grad_ndc = grad_output.clone()
+
+        # Compute the gradient for ndc
+        grad_ndc[:, 0] *= (dimension[1] - 1) * 0.5
+        grad_ndc[:, 1] *= (dimension[0] - 1) * 0.5
+        # grad_ndc[:, 2] = 0  # z-component has no effect on pixel coordinates
+        return grad_ndc, None

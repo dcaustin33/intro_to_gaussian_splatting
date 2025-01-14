@@ -10,7 +10,7 @@ from splat.test.create_image_auto import (
     render_pixel,
 )
 from splat.test.derivatives import gaussianMeanToPixels, pixelCoordToColor
-from splat.test.gaussian_weight_derivatives import render_pixel_custom
+from splat.test.gaussian_weight_derivatives import render_pixel_custom, mean_3d_to_camera_space, camera_space_to_pixel_space, ndc_to_pixels
 
 def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     point_ndc = gaussianMeanToPixels.apply(
@@ -83,10 +83,16 @@ def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, wi
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
-    mean_2d = gaussian.mean_2d
+    mean_3d = gaussian.mean_3d
+    camera_space_mean = mean_3d_to_camera_space.apply(mean_3d, camera.extrinsic_matrix)
+    pixel_space_mean = camera_space_to_pixel_space.apply(camera_space_mean, camera.intrinsic_matrix)
+    new_pixel_space_mean = pixel_space_mean[:, :3] / pixel_space_mean[:, 3].unsqueeze(1)
+    final_pixel_space_mean = torch.cat([new_pixel_space_mean, pixel_space_mean[:, 3].unsqueeze(1)], dim=1)
+    ndc_to_pixels = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
+    import pdb; pdb.set_trace()
     color = gaussian.color
     opacity = gaussian.opacity
-    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    j_w_matrix = compute_j_w_matrix(camera, mean_3d)
     covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
