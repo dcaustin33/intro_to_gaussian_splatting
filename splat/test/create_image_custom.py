@@ -4,12 +4,13 @@ from splat.test.checked_covariance_derivatives import r_s_to_cov_2d
 from splat.test.create_image_auto import (
     Camera,
     Gaussian,
-    Gaussian_Covariance_Test,
+    Gaussian,
     compute_2d_covariance,
     compute_j_w_matrix,
+    render_pixel,
 )
 from splat.test.derivatives import gaussianMeanToPixels, pixelCoordToColor
-
+from splat.test.gaussian_weight_derivatives import render_pixel_custom
 
 def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     point_ndc = gaussianMeanToPixels.apply(
@@ -48,7 +49,7 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     return image, point_ndc
 
 
-def create_image_covariance_test(camera: Camera, gaussian: Gaussian_Covariance_Test, height: int, width: int):
+def create_image_covariance_test_custom(camera: Camera, gaussian: Gaussian, height: int, width: int):
     """
     Camera gives the internal and the external matrices.
     Gaussian_Covariance_Test gives the mean_2d, r, s, color, opacity
@@ -66,13 +67,35 @@ def create_image_covariance_test(camera: Camera, gaussian: Gaussian_Covariance_T
     covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
-            image[i, j] = pixelCoordToColor.apply(
-                torch.tensor([[i, j]]),
-                mean_2d[:, :2],
-                color,
-                covariance_2d,
-                torch.tensor(1.0),
-                opacity,
-            )
+            image[i, j] = render_pixel(
+                i, 
+                j, 
+                mean_2d[:, :2], 
+                covariance_2d, 
+                opacity, 
+                color, 
+                1.0
+            )[0]
 
+    return image
+
+def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, width: int):
+    image = torch.zeros((height, width, 3))
+    r = gaussian.r
+    s = gaussian.s
+    mean_2d = gaussian.mean_2d
+    color = gaussian.color
+    opacity = gaussian.opacity
+    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
+    for i in range(height):
+        for j in range(width):
+            image[i, j] = render_pixel_custom(
+                torch.tensor([i, j]),
+                mean_2d[:, :2],
+                covariance_2d,
+                opacity,
+                color,
+                torch.tensor(1.0)
+            )
     return image

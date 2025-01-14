@@ -75,3 +75,26 @@ class gaussian_weight(torch.autograd.Function):
         deriv_wrt_gaussian_mean = -1
         grad_gaussian_mean = torch.einsum("bi,bij->bj", grad_output, deriv_wrt_diff) * deriv_wrt_gaussian_mean
         return grad_gaussian_mean, grad_inv_cov, None
+    
+def render_pixel_custom(
+        pixel_value: torch.Tensor,
+        gaussian_mean: torch.Tensor,
+        inverted_covariance: torch.Tensor,
+        opacity: torch.Tensor,
+        color: torch.Tensor,
+        current_T: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Inputs:
+        gaussian_mean: nx2 tensor
+        inverted_covariance: nx2x2 tensor
+        opacity: nx1 tensor
+        color: nx3 tensor
+        current_T: nx1 tensor
+        pixel_value: 1x2 tensor
+    """
+    g_weight = gaussian_weight.apply(gaussian_mean, inverted_covariance, pixel_value)
+    g_strength = gaussian_exp.apply(g_weight)
+    alpha = get_alpha.apply(g_strength, opacity)
+    color_output = final_color.apply(color, current_T, alpha)
+    return color_output

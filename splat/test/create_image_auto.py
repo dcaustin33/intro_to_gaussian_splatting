@@ -3,7 +3,6 @@ This file does not have anything to do with ordering of the gaussians.
 Renders on the CPU and uses pytorch backprop.
 """
 
-
 import math
 from dataclasses import dataclass
 from typing import Tuple
@@ -12,29 +11,31 @@ import torch
 from matplotlib import pyplot as plt
 
 from splat.render_engine.utils import compute_fov_from_focal
-from splat.test.auto_functions import r_s_to_cov_2d_auto
+from splat.test.auto_functions import r_s_to_cov_2d_auto, render_pixel_auto
 from splat.utils import build_rotation, get_extrinsic_matrix, getIntrinsicMatrix
 
 
 @dataclass
-class Gaussian:
+class Gaussian_no_r_s:
     mean: torch.Tensor
     covariance: torch.Tensor
     color: torch.Tensor
     opacity: float
-    
+
     @property
     def homogeneous_points(self):
         return torch.cat([self.mean, torch.ones(1, 1)], dim=1)
-    
+
+
 @dataclass
-class Gaussian_Covariance_Test:
-    mean_2d: torch.Tensor # but has a third dimension for the depth needed for J
+class Gaussian:
+    mean_2d: torch.Tensor  # but has a third dimension for the depth needed for J
     r: torch.Tensor
     s: torch.Tensor
     color: torch.Tensor
     opacity: float
-    
+
+
 @dataclass
 class Camera:
     focal_x: torch.Tensor
@@ -48,16 +49,13 @@ class Camera:
 
     @property
     def intrinsic_matrix(self):
-        return getIntrinsicMatrix(
-            self.focal_x, 
-            self.focal_y, 
-            self.width,
-            self.height
-        )
+        return getIntrinsicMatrix(self.focal_x, self.focal_y, self.width, self.height)
 
     @property
     def extrinsic_matrix(self):
-        return get_extrinsic_matrix(build_rotation(self.camera_rotation), self.camera_translation).T
+        return get_extrinsic_matrix(
+            build_rotation(self.camera_rotation), self.camera_translation
+        ).T
 
     @property
     def fovX(self):
@@ -116,9 +114,9 @@ def compute_2d_covariance(
     z = points_camera_space[:, 2]
     j = torch.zeros((points_camera_space.shape[0], 3, 3))
     j[:, 0, 0] = focal_x / z
-    j[:, 0, 2] = -(focal_x * x) / (z ** 2)
+    j[:, 0, 2] = -(focal_x * x) / (z**2)
     j[:, 1, 1] = focal_y / z
-    j[:, 1, 2] = -(focal_y * y) / (z ** 2)
+    j[:, 1, 2] = -(focal_y * y) / (z**2)
 
     # we assume our extrinsic matrix has the translation in the last row
     # so it is already transposed so we transpose back
@@ -128,7 +126,7 @@ def compute_2d_covariance(
     t = w @ j.transpose(1, 2)
     covariance2d = (
         t.transpose(1, 2)
-        @ covariance_3d.transpose(1, 2) # doesnt this not do anything?
+        @ covariance_3d.transpose(1, 2)  # doesnt this not do anything?
         @ t
     )
     # scale by 0.3 for the covariance and numerical stability on the diagonal
@@ -139,7 +137,10 @@ def compute_2d_covariance(
 
 
 def extract_gaussian_weight(
-    pixel: torch.Tensor, mean: torch.Tensor, inv_covariance: torch.Tensor, pdb: bool = False
+    pixel: torch.Tensor,
+    mean: torch.Tensor,
+    inv_covariance: torch.Tensor,
+    pdb: bool = False,
 ) -> torch.Tensor:
     """
     Use the covariance matrix to extract the weight of the point
@@ -150,9 +151,12 @@ def extract_gaussian_weight(
     """
     diff = pixel - mean
     diff = diff.unsqueeze(0)
-    gaussian_weight = -0.5 * torch.matmul(diff, torch.matmul(inv_covariance, diff.transpose(1, 2)))
+    gaussian_weight = -0.5 * torch.matmul(
+        diff, torch.matmul(inv_covariance, diff.transpose(1, 2))
+    )
     actual_weight = torch.exp(gaussian_weight)
     return actual_weight, gaussian_weight
+
 
 def render_pixel(
     x_value: int,
@@ -176,25 +180,33 @@ def render_pixel(
             f"x_value: {x_value}, y_value: {y_value}, gaussian_strength: {gaussian_strength}, alpha: {alpha}, test_t: {test_t}, mean_2d: {mean_2d}"
         )
     if test_t < min_weight:
-        return
-    return color * current_T * alpha, test_t, current_T, gaussian_strength, exponent_weight
+        pass
+    return (
+        color * current_T * alpha,
+        test_t,
+        current_T,
+        gaussian_strength,
+        exponent_weight,
+    )
 
 
 def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     points_camera_space = gaussian.homogeneous_points @ camera.extrinsic_matrix
     points_pixel_space = points_camera_space @ camera.intrinsic_matrix
-    points_pixel_space_transformed = points_pixel_space[:, :2] / points_pixel_space[:, 3:4]
+    points_pixel_space_transformed = (
+        points_pixel_space[:, :2] / points_pixel_space[:, 3:4]
+    )
     pixel_x = ndc2Pix(points_pixel_space_transformed[:, 0], camera.width).view(-1, 1)
     pixel_y = ndc2Pix(points_pixel_space_transformed[:, 1], camera.height).view(-1, 1)
     point_ndc = torch.cat([pixel_x, pixel_y], dim=1)
     covariance_2d = compute_2d_covariance(
-        gaussian.homogeneous_points, 
-        gaussian.covariance, 
-        camera.extrinsic_matrix, 
-        camera.tan_fovX, 
-        camera.tan_fovY, 
-        camera.focal_x, 
-        camera.focal_y
+        gaussian.homogeneous_points,
+        gaussian.covariance,
+        camera.extrinsic_matrix,
+        camera.tan_fovX,
+        camera.tan_fovY,
+        camera.focal_x,
+        camera.focal_y,
     )[0]
     inverted_covariance_2d = torch.linalg.inv(covariance_2d)
     image = torch.zeros((height, width, 3))
@@ -204,18 +216,20 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     for i in range(height):
         for j in range(width):
             image[i, j] = render_pixel(
-                i, 
-                j, 
-                point_ndc[:, :2], 
-                inverted_covariance_2d, 
-                gaussian.opacity, 
-                gaussian.color, 
-                1.0
+                i,
+                j,
+                point_ndc[:, :2],
+                inverted_covariance_2d,
+                gaussian.opacity,
+                gaussian.color,
+                1.0,
             )[0]
     return image, point_ndc
 
 
-def create_image_covariance_test_auto(camera: Camera, gaussian: Gaussian_Covariance_Test, height: int, width: int):
+def create_image_covariance_test_auto(
+    camera: Camera, gaussian: Gaussian, height: int, width: int
+):
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
@@ -225,17 +239,33 @@ def create_image_covariance_test_auto(camera: Camera, gaussian: Gaussian_Covaria
 
     j_w_matrix = compute_j_w_matrix(camera, mean_2d)
     r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
-    print("r_s_to_cov_2d", r_s_to_cov_2d)
 
     for i in range(height):
         for j in range(width):
             image[i, j] = render_pixel(
-                i, 
-                j, 
-                mean_2d[:, :2], 
-                r_s_to_cov_2d, 
-                opacity, 
-                color, 
-                1.0
+                i, j, mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
+            )[0]
+    return image
+
+
+def create_image_full_auto(
+    camera: Camera,
+    gaussian: Gaussian,
+    height: int,
+    width: int,
+):
+    """Test creating an image for a single gaussian with everything needing gaussians"""
+    image = torch.zeros((height, width, 3))
+    r = gaussian.r
+    s = gaussian.s
+    mean_2d = gaussian.mean_2d
+    color = gaussian.color
+    opacity = gaussian.opacity
+    j_w_matrix = compute_j_w_matrix(camera, mean_2d)
+    r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
+    for i in range(height):
+        for j in range(width):
+            image[i, j] = render_pixel_auto(
+                torch.tensor([i, j]), mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
             )[0]
     return image

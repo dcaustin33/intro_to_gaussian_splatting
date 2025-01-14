@@ -113,21 +113,26 @@ class covariance_3d_to_covariance_2d(torch.autograd.Function):
         U is the J@W.T matrix. this is a 3x3 matrix
         To get the covariance 2d we do U.T @ covariance_3d @ U
         """
-        if U.shape[0] == 1:
-            U = U.squeeze(0)
-        first_mult = torch.einsum("ij,njk->nik", U.transpose(0, 1), covariance_3d)
-        # second_mult = first_mult @ U
-        second_mult = torch.einsum("nij,jk->nik", first_mult, U)
-        ctx.save_for_backward(U)
-        return second_mult
+        ctx.save_for_backward(U, covariance_3d)
+        outcome = torch.bmm(U.transpose(1, 2), torch.bmm(covariance_3d, U))
+        return outcome
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
-        (U,) = ctx.saved_tensors
+        U, covariance_3d = ctx.saved_tensors
 
-        # Derivative of (M^T * C * M) w.r.t. C = M * grad_output * M^T
-        grad_cov3d = U @ grad_output @ U.transpose(0, 1)
-        return grad_cov3d, None
+        # Derivative of (U^T * C * U) w.r.t. C = U * grad_output * U^T
+        # grad_cov3d = torch.einsum("nij,njk->nik", U, grad_output)
+        # grad_cov3d = torch.einsum("nij,njk->nik", grad_cov3d, U.transpose(1, 2))
+        grad_cov3d = U @ grad_output @ U.transpose(1, 2)
+        # Derivative of (U^T * C * U) w.r.t. U
+        # Z = (U^T * (C * U)) Y= C * U
+        # the contribution from Y is covariance_3d.T @ grad_output
+        y = torch.einsum("nij,njk->nik", covariance_3d, U)
+        deriv_U_first_part = torch.einsum("nij,njk->nik", grad_output, y.transpose(1, 2)).transpose(1, 2)
+        dz_dy = torch.einsum("nij,njk->nik", U, grad_output)
+        dy_du = torch.einsum("nij,njk->nik", covariance_3d.transpose(1, 2), dz_dy)
+        return grad_cov3d, deriv_U_first_part + dy_du
 
 
 class R_S_To_M(torch.autograd.Function):
@@ -312,13 +317,11 @@ class scale_to_s_matrix(torch.autograd.Function):
     @staticmethod
     def forward(ctx, s: torch.Tensor):
         """Takes the nx3 tensor and returns the nx3x3 diagonal matrix"""
-        ctx.save_for_backward(s)
         return torch.diag_embed(s)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         """Grad output is a nx3x3 tensor"""
-        s = ctx.saved_tensors[0]
         deriv_wr_s1 = grad_output[:, 0, 0].view(-1, 1)
         deriv_wr_s2 = grad_output[:, 1, 1].view(-1, 1)
         deriv_wr_s3 = grad_output[:, 2, 2].view(-1, 1)

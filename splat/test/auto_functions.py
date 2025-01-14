@@ -68,3 +68,37 @@ def r_s_to_cov_2d_auto(r: torch.Tensor, s: torch.Tensor, U: torch.Tensor):
      cov_2d = covariance_3d_to_covariance_2d_auto(cov_3d, U)
      inv_cov_2d = invert_2x2_matrix_auto(cov_2d[:, :2, :2])
      return inv_cov_2d
+
+def gaussian_weight_auto(gaussian_mean: torch.Tensor, inverted_covariance: torch.Tensor, pixel: torch.Tensor):
+    """
+    gaussian_mean: nx2 tensor
+    inverted_covariance: nx2x2 tensor
+    pixel: 1x2 tensor
+    """
+    diff = (pixel - gaussian_mean).unsqueeze(1)
+    # 2x2 * 2x1 = 2x1
+    inv_cov_mult = torch.einsum('bij,bjk->bik', inverted_covariance, diff.transpose(1, 2))
+    return -0.5 * torch.einsum('bij,bjk->bik', diff, inv_cov_mult).squeeze(-1)
+
+def gaussian_exp_auto(gaussian_weight: torch.Tensor):
+    return torch.exp(gaussian_weight)
+
+def get_alpha_auto(gaussian_strength: torch.Tensor, unactivated_opacity: torch.Tensor):
+    return gaussian_strength * torch.sigmoid(unactivated_opacity)
+
+def final_color_auto(color: torch.Tensor, current_T: torch.Tensor, alpha: torch.Tensor):
+    return color * current_T * alpha
+
+def render_pixel_auto(
+    pixel_value: torch.Tensor,
+    mean_2d: torch.Tensor,
+    inv_covariance_2d: torch.Tensor,
+    opacity: torch.Tensor,
+    color: torch.Tensor,
+    current_T: float,
+):
+    g_weight = gaussian_weight_auto(mean_2d, inv_covariance_2d, pixel_value)
+    g_strength = gaussian_exp_auto(g_weight)
+    alpha = get_alpha_auto(g_strength, opacity)
+    final_color = final_color_auto(color, current_T, alpha)
+    return final_color
