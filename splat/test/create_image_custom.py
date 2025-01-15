@@ -1,5 +1,6 @@
 import torch
 
+from splat.test.auto_functions import render_pixel_auto
 from splat.test.checked_covariance_derivatives import r_s_to_cov_2d
 from splat.test.create_image_auto import (
     Camera,
@@ -7,6 +8,7 @@ from splat.test.create_image_auto import (
     Gaussian,
     compute_2d_covariance,
     compute_j_w_matrix,
+    ndc2Pix,
     render_pixel,
 )
 from splat.test.derivatives import gaussianMeanToPixels, pixelCoordToColor
@@ -59,7 +61,7 @@ def create_image_covariance_test_custom(camera: Camera, gaussian: Gaussian, heig
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
-    mean_2d = gaussian.mean_2d
+    mean_2d = gaussian.mean_3d
     color = gaussian.color
     opacity = gaussian.opacity
 
@@ -67,14 +69,22 @@ def create_image_covariance_test_custom(camera: Camera, gaussian: Gaussian, heig
     covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
-            image[i, j] = render_pixel(
-                i, 
-                j, 
-                mean_2d[:, :2], 
-                covariance_2d, 
-                opacity, 
-                color, 
-                1.0
+            # image[i, j] = render_pixel(
+            #     i, 
+            #     j, 
+            #     mean_2d[:, :2], 
+            #     covariance_2d, 
+            #     opacity, 
+            #     color, 
+            #     1.0
+            # )[0]
+            image[i, j] = render_pixel_custom(
+                torch.tensor([i, j]),
+                mean_2d[:, :2],
+                covariance_2d,
+                opacity,
+                color,
+                torch.tensor(1.0)
             )[0]
 
     return image
@@ -85,14 +95,21 @@ def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, wi
     s = gaussian.s
     mean_3d = gaussian.homogeneous_points
 
-    camera_space_mean = mean_3d_to_camera_space.apply(mean_3d, camera.extrinsic_matrix)
-    pixel_space_mean = camera_space_to_pixel_space.apply(camera_space_mean, camera.intrinsic_matrix)
-    new_pixel_space_mean = pixel_space_mean[:, :3] / pixel_space_mean[:, 3].unsqueeze(1)
-    final_pixel_space_mean = torch.cat([new_pixel_space_mean, pixel_space_mean[:, 3].unsqueeze(1)], dim=1)
-    pixel_mean = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
+    # camera_space_mean = mean_3d_to_camera_space.apply(mean_3d, camera.extrinsic_matrix)
+    # pixel_space_mean = camera_space_to_pixel_space.apply(camera_space_mean, camera.intrinsic_matrix)
+    # new_pixel_space_mean = pixel_space_mean[:, :3] / pixel_space_mean[:, 3].unsqueeze(1)
+    # final_pixel_space_mean = torch.cat([new_pixel_space_mean, pixel_space_mean[:, 3].unsqueeze(1)], dim=1)
+    # pixel_mean = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
+    # final_mean_2d = torch.cat([pixel_mean[:, :2], pixel_mean[:, 3].unsqueeze(1)], dim=1)
     
-    final_coords = torch.cat([pixel_mean[:, :2], pixel_mean[:, 3].unsqueeze(1)], dim=1)
-    print("final_coords", final_coords)
+    mean_2d = gaussian.homogeneous_points @ camera.extrinsic_matrix @ camera.intrinsic_matrix
+    new_means_2d = mean_2d[:, :2] / mean_2d[:, 3].unsqueeze(1)
+    next_mean_2d = torch.cat([new_means_2d, mean_2d[:, 3].unsqueeze(1)], dim=1)
+    pixel_x = ndc2Pix(next_mean_2d[:, 0], dimension=width)
+    pixel_y = ndc2Pix(next_mean_2d[:, 1], dimension=height)
+    final_mean_2d = torch.cat([pixel_x.view(-1, 1), pixel_y.view(-1, 1), next_mean_2d[:, 2].view(-1, 1)], dim=1)
+
+    print("final_mean_2d", final_mean_2d)
     color = gaussian.color
     opacity = gaussian.opacity
     j_w_matrix = compute_j_w_matrix(camera, mean_3d)
@@ -101,7 +118,7 @@ def create_image_full_custom(camera: Camera, gaussian: Gaussian, height: int, wi
         for j in range(width):
             image[i, j] = render_pixel_custom(
                 torch.tensor([i, j]),
-                final_coords[:, :2],
+                final_mean_2d[:, :2],
                 covariance_2d,
                 opacity,
                 color,

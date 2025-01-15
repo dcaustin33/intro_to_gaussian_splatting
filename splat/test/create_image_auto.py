@@ -53,13 +53,13 @@ class Camera:
 
     @property
     def intrinsic_matrix(self):
-        return getIntrinsicMatrix(self.focal_x, self.focal_y, self.width, self.height)
+        return getIntrinsicMatrix(self.focal_x, self.focal_y, self.width, self.height).double()
 
     @property
     def extrinsic_matrix(self):
         return get_extrinsic_matrix(
             build_rotation(self.camera_rotation), self.camera_translation
-        ).T
+        ).T.double()
 
     @property
     def fovX(self):
@@ -90,7 +90,7 @@ def compute_j_w_matrix(camera: Camera, points_2d: torch.Tensor):
     points_2d is a nx3 tensor where the last dimension is the depth
     We are expecting the points to already be in camera space
     """
-    j = torch.zeros((points_2d.shape[0], 3, 3))
+    j = torch.zeros((points_2d.shape[0], 3, 3)).double()
     j[:, 0, 0] = camera.focal_x / points_2d[:, 2]
     j[:, 0, 2] = -(camera.focal_x * points_2d[:, 0]) / (points_2d[:, 2] ** 2)
     j[:, 1, 1] = camera.focal_y / points_2d[:, 2]
@@ -237,7 +237,7 @@ def create_image_covariance_test_auto(
     image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
-    mean_2d = gaussian.mean_2d
+    mean_2d = gaussian.mean_3d
     color = gaussian.color
     opacity = gaussian.opacity
 

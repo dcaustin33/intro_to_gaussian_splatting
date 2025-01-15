@@ -1,6 +1,7 @@
 import torch
 from torch.autograd.gradcheck import gradcheck
 
+from splat.test.auto_functions import gaussian_weight_auto
 from splat.utils import build_rotation
 
 
@@ -61,7 +62,7 @@ class gaussian_weight(torch.autograd.Function):
         # 2x2 * 2x1 = 2x1
         inv_cov_mult = torch.einsum('bij,bjk->bik', inverted_covariance, diff.transpose(1, 2))
         return -0.5 * torch.einsum('bij,bjk->bik', diff, inv_cov_mult).squeeze(-1)
-    
+
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         """Output of forward is a nx1 tensor so the grad_output is a nx1 tensor"""
@@ -71,9 +72,13 @@ class gaussian_weight(torch.autograd.Function):
         deriv_wrt_inv_cov = -0.5 * torch.einsum("bij,bjk->bik", diff.transpose(1, 2), diff)
         grad_inv_cov = grad_output * deriv_wrt_inv_cov  # output is nx2x2
 
-        deriv_wrt_diff = -0.5 * 2 * torch.einsum("bij,bjk->bik", diff, inverted_covariance)
-        deriv_wrt_gaussian_mean = -1
-        grad_gaussian_mean = torch.einsum("bi,bij->bj", grad_output, deriv_wrt_diff) * deriv_wrt_gaussian_mean
+        # deriv_wrt_diff = -0.5 * 2 * torch.einsum("bij,bjk->bik", diff, inverted_covariance)
+        # deriv_wrt_gaussian_mean = -1
+        # grad_gaussian_mean = torch.einsum("bi,bij->bj", grad_output, deriv_wrt_diff) * deriv_wrt_gaussian_mean]
+        deriv_output_wrt_diff1 = torch.einsum("bij,bjk->bik", inverted_covariance, diff.transpose(1, 2))
+        deriv_output_wrt_diff2 = torch.einsum("bij,bjk->bik", inverted_covariance.transpose(1, 2), diff.transpose(1, 2))
+        deriv_output_wrt_diff = -0.5 * torch.einsum("bi,bji->bj", grad_output, deriv_output_wrt_diff1 + deriv_output_wrt_diff2)
+        grad_gaussian_mean = deriv_output_wrt_diff * -1
         return grad_gaussian_mean, grad_inv_cov, None
     
 def render_pixel_custom(
@@ -94,6 +99,7 @@ def render_pixel_custom(
         pixel_value: 1x2 tensor
     """
     g_weight = gaussian_weight.apply(gaussian_mean, inverted_covariance, pixel_value)
+    # g_weight = gaussian_weight_auto(gaussian_mean, inverted_covariance, pixel_value)
     g_strength = gaussian_exp.apply(g_weight)
     alpha = get_alpha.apply(g_strength, opacity)
     color_output = final_color.apply(color, current_T, alpha)
