@@ -1,7 +1,7 @@
 import torch
 from torch.autograd.gradcheck import gradcheck
 
-from splat.test.auto_functions import gaussian_weight_auto
+from splat.custom_pytorch_implementation.auto_functions import gaussian_weight_auto
 from splat.utils import build_rotation
 
 
@@ -10,10 +10,11 @@ class final_color(torch.autograd.Function):
     def forward(ctx, color: torch.Tensor, current_T: torch.Tensor, alpha: torch.Tensor):
         """Color is a nx3 tensor, weight is a nx1 tensor, alpha is a nx1 tensor"""
         ctx.save_for_backward(color, current_T, alpha)
-        return color * current_T * alpha
+        test_t = current_T * (1 - alpha)
+        return color * current_T * alpha, test_t
     
     @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
+    def backward(ctx, grad_output: torch.Tensor, grad_test_t: torch.Tensor):
         """Output of forward is a nx3 tensor so the grad_output is a nx3 tensor"""
         color, current_T, alpha = ctx.saved_tensors
         grad_color = grad_output * current_T * alpha
@@ -101,8 +102,8 @@ def render_pixel_custom(
     g_weight = gaussian_weight.apply(gaussian_mean, inverted_covariance, pixel_value)
     g_strength = gaussian_exp.apply(g_weight)
     alpha = get_alpha.apply(g_strength, opacity)
-    color_output = final_color.apply(color, current_T, alpha)
-    return color_output
+    color_output, current_T = final_color.apply(color, current_T, alpha)
+    return color_output, current_T
 
 
 class mean_3d_to_camera_space(torch.autograd.Function):
