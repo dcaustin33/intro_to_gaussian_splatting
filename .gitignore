@@ -13,3 +13,5 @@ treehill
 bicycle
 models
 .vscode
+/data
+/colmap_data
