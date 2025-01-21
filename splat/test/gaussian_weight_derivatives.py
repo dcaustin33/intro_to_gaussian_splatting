@@ -99,7 +99,6 @@ def render_pixel_custom(
         pixel_value: 1x2 tensor
     """
     g_weight = gaussian_weight.apply(gaussian_mean, inverted_covariance, pixel_value)
-    # g_weight = gaussian_weight_auto(gaussian_mean, inverted_covariance, pixel_value)
     g_strength = gaussian_exp.apply(g_weight)
     alpha = get_alpha.apply(g_strength, opacity)
     color_output = final_color.apply(color, current_T, alpha)

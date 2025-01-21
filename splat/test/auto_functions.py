@@ -87,7 +87,8 @@ def get_alpha_auto(gaussian_strength: torch.Tensor, unactivated_opacity: torch.T
     return gaussian_strength * torch.sigmoid(unactivated_opacity)
 
 def final_color_auto(color: torch.Tensor, current_T: torch.Tensor, alpha: torch.Tensor):
-    return color * current_T * alpha
+    test_t = current_T * (1 - alpha)
+    return color * current_T * alpha, test_t
 
 def render_pixel_auto(
     pixel_value: torch.Tensor,
@@ -95,10 +96,10 @@ def render_pixel_auto(
     inv_covariance_2d: torch.Tensor,
     opacity: torch.Tensor,
     color: torch.Tensor,
-    current_T: float,
+    current_T: torch.Tensor,
 ):
     g_weight = gaussian_weight_auto(mean_2d, inv_covariance_2d, pixel_value)
     g_strength = gaussian_exp_auto(g_weight)
     alpha = get_alpha_auto(g_strength, opacity)
-    final_color = final_color_auto(color, current_T, alpha)
-    return final_color
+    final_color, current_T = final_color_auto(color, current_T, alpha)
+    return final_color, torch.tensor(current_T)

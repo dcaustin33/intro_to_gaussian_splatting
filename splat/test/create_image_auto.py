@@ -5,7 +5,7 @@ Renders on the CPU and uses pytorch backprop.
 
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from matplotlib import pyplot as plt
@@ -249,7 +249,7 @@ def create_image_covariance_test_auto(
             image[i, j] = render_pixel(
                 i, j, mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
             )[0]
-    return image
+    return image, torch.tensor(1.0)
 
 
 def create_image_full_auto(
@@ -257,9 +257,12 @@ def create_image_full_auto(
     gaussian: Gaussian,
     height: int,
     width: int,
+    image: torch.Tensor = None,
+    current_Ts: Optional[torch.Tensor] = None,
 ):
     """Test creating an image for a single gaussian with everything needing gaussians"""
-    image = torch.zeros((height, width, 3))
+    if image is None:
+        image = torch.zeros((height, width, 3))
     r = gaussian.r
     s = gaussian.s
     mean_3d = gaussian.mean_3d
@@ -272,14 +275,16 @@ def create_image_full_auto(
     pixel_y = ndc2Pix(next_mean_2d[:, 1], dimension=height)
 
     final_mean_2d = torch.cat([pixel_x.view(-1, 1), pixel_y.view(-1, 1), next_mean_2d[:, 2].view(-1, 1)], dim=1)
-    print("final_mean_2d", final_mean_2d)
     color = gaussian.color
     opacity = gaussian.opacity
     j_w_matrix = compute_j_w_matrix(camera, mean_3d)
     r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
+    if current_Ts is None:
+        current_Ts = torch.ones((height, width))
+    output_ts = torch.ones((height, width))
     for i in range(height):
         for j in range(width):
-            image[i, j] = render_pixel_auto(
-                torch.tensor([i, j]), final_mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
-            )[0]
-    return image
+            image[i, j], output_ts[i, j] = render_pixel_auto(
+                torch.tensor([i, j]), final_mean_2d[:, :2], r_s_to_cov_2d, opacity, color, current_Ts[i, j]
+            )
+    return image, output_ts
