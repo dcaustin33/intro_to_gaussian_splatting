@@ -73,9 +73,6 @@ class gaussian_weight(torch.autograd.Function):
         deriv_wrt_inv_cov = -0.5 * torch.einsum("bij,bjk->bik", diff.transpose(1, 2), diff)
         grad_inv_cov = grad_output * deriv_wrt_inv_cov  # output is nx2x2
 
-        # deriv_wrt_diff = -0.5 * 2 * torch.einsum("bij,bjk->bik", diff, inverted_covariance)
-        # deriv_wrt_gaussian_mean = -1
-        # grad_gaussian_mean = torch.einsum("bi,bij->bj", grad_output, deriv_wrt_diff) * deriv_wrt_gaussian_mean]
         deriv_output_wrt_diff1 = torch.einsum("bij,bjk->bik", inverted_covariance, diff.transpose(1, 2))
         deriv_output_wrt_diff2 = torch.einsum("bij,bjk->bik", inverted_covariance.transpose(1, 2), diff.transpose(1, 2))
         deriv_output_wrt_diff = -0.5 * torch.einsum("bi,bji->bj", grad_output, deriv_output_wrt_diff1 + deriv_output_wrt_diff2)
