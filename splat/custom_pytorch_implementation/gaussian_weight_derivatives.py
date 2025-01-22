@@ -1,7 +1,7 @@
 import torch
 from torch.autograd.gradcheck import gradcheck
 
-from splat.test.auto_functions import gaussian_weight_auto
+from splat.custom_pytorch_implementation.auto_functions import gaussian_weight_auto
 from splat.utils import build_rotation
 
 
@@ -10,10 +10,11 @@ class final_color(torch.autograd.Function):
     def forward(ctx, color: torch.Tensor, current_T: torch.Tensor, alpha: torch.Tensor):
         """Color is a nx3 tensor, weight is a nx1 tensor, alpha is a nx1 tensor"""
         ctx.save_for_backward(color, current_T, alpha)
-        return color * current_T * alpha
+        test_t = current_T * (1 - alpha)
+        return color * current_T * alpha, test_t
     
     @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):
+    def backward(ctx, grad_output: torch.Tensor, grad_test_t: torch.Tensor):
         """Output of forward is a nx3 tensor so the grad_output is a nx3 tensor"""
         color, current_T, alpha = ctx.saved_tensors
         grad_color = grad_output * current_T * alpha
@@ -59,7 +60,7 @@ class gaussian_weight(torch.autograd.Function):
         """
         ctx.save_for_backward(gaussian_mean, inverted_covariance, pixel)
         diff = (pixel - gaussian_mean).unsqueeze(1)
-        # 2x2 * 2x1 = 2x1
+
         inv_cov_mult = torch.einsum('bij,bjk->bik', inverted_covariance, diff.transpose(1, 2))
         return -0.5 * torch.einsum('bij,bjk->bik', diff, inv_cov_mult).squeeze(-1)
 
@@ -67,14 +68,11 @@ class gaussian_weight(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor):
         """Output of forward is a nx1 tensor so the grad_output is a nx1 tensor"""
         gaussian_mean, inverted_covariance, pixel = ctx.saved_tensors
-        diff = (pixel - gaussian_mean).unsqueeze(1)  # nx2x1
+        diff = (pixel - gaussian_mean).unsqueeze(1)  # nx1x2
 
         deriv_wrt_inv_cov = -0.5 * torch.einsum("bij,bjk->bik", diff.transpose(1, 2), diff)
-        grad_inv_cov = grad_output * deriv_wrt_inv_cov  # output is nx2x2
+        grad_inv_cov = torch.einsum("bi,bjk->bjk", grad_output, deriv_wrt_inv_cov)
 
-        # deriv_wrt_diff = -0.5 * 2 * torch.einsum("bij,bjk->bik", diff, inverted_covariance)
-        # deriv_wrt_gaussian_mean = -1
-        # grad_gaussian_mean = torch.einsum("bi,bij->bj", grad_output, deriv_wrt_diff) * deriv_wrt_gaussian_mean]
         deriv_output_wrt_diff1 = torch.einsum("bij,bjk->bik", inverted_covariance, diff.transpose(1, 2))
         deriv_output_wrt_diff2 = torch.einsum("bij,bjk->bik", inverted_covariance.transpose(1, 2), diff.transpose(1, 2))
         deriv_output_wrt_diff = -0.5 * torch.einsum("bi,bji->bj", grad_output, deriv_output_wrt_diff1 + deriv_output_wrt_diff2)
@@ -101,8 +99,8 @@ def render_pixel_custom(
     g_weight = gaussian_weight.apply(gaussian_mean, inverted_covariance, pixel_value)
     g_strength = gaussian_exp.apply(g_weight)
     alpha = get_alpha.apply(g_strength, opacity)
-    color_output = final_color.apply(color, current_T, alpha)
-    return color_output
+    color_output, current_T = final_color.apply(color, current_T, alpha)
+    return color_output, current_T
 
 
 class mean_3d_to_camera_space(torch.autograd.Function):

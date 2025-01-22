@@ -11,7 +11,7 @@ from splat.render_engine.gaussianScene2 import GaussianScene2
 from splat.utils import (
     build_rotation,
     get_extrinsic_matrix,
-    getIntinsicMatrix,
+    getIntrinsicMatrix,
     read_camera_file,
     read_image_file,
     read_images_binary,
@@ -32,7 +32,7 @@ def get_image_info(image_num, image_dict, camera_dict):
     width = int(width)
     height = camera_dict[image_dict[image_num].camera_id].height / 2
     height = int(height)
-    intrinsic_matrix = getIntinsicMatrix(focal_x, focal_y, height, width).T
+    intrinsic_matrix = getIntrinsicMatrix(focal_x, focal_y, height, width).T
 
     return extrinsic_matrix, intrinsic_matrix, height, width, focal_x, focal_y
 
