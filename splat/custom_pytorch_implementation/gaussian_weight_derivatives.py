@@ -60,7 +60,7 @@ class gaussian_weight(torch.autograd.Function):
         """
         ctx.save_for_backward(gaussian_mean, inverted_covariance, pixel)
         diff = (pixel - gaussian_mean).unsqueeze(1)
-        # 2x2 * 2x1 = 2x1
+
         inv_cov_mult = torch.einsum('bij,bjk->bik', inverted_covariance, diff.transpose(1, 2))
         return -0.5 * torch.einsum('bij,bjk->bik', diff, inv_cov_mult).squeeze(-1)
 
@@ -68,10 +68,10 @@ class gaussian_weight(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor):
         """Output of forward is a nx1 tensor so the grad_output is a nx1 tensor"""
         gaussian_mean, inverted_covariance, pixel = ctx.saved_tensors
-        diff = (pixel - gaussian_mean).unsqueeze(1)  # nx2x1
+        diff = (pixel - gaussian_mean).unsqueeze(1)  # nx1x2
 
         deriv_wrt_inv_cov = -0.5 * torch.einsum("bij,bjk->bik", diff.transpose(1, 2), diff)
-        grad_inv_cov = grad_output * deriv_wrt_inv_cov  # output is nx2x2
+        grad_inv_cov = torch.einsum("bi,bjk->bjk", grad_output, deriv_wrt_inv_cov)
 
         deriv_output_wrt_diff1 = torch.einsum("bij,bjk->bik", inverted_covariance, diff.transpose(1, 2))
         deriv_output_wrt_diff2 = torch.einsum("bij,bjk->bik", inverted_covariance.transpose(1, 2), diff.transpose(1, 2))

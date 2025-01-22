@@ -15,3 +15,8 @@ models
 .vscode
 /data
 /colmap_data
+
+build/
+*build*
+*.cpython*
+/output_images
