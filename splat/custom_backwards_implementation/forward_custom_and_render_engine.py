@@ -17,6 +17,7 @@ from splat.custom_pytorch_implementation.create_image_auto import (
     create_image_full_auto_multiple_gaussians,
     create_image_full_auto_multiple_gaussians_with_splat_gaussians,
 )
+from splat.render_engine.gaussianScene2 import GaussianScene2
 
 
 def return_gaussians() -> Gaussians:
@@ -75,6 +76,26 @@ def return_gt_image() -> torch.Tensor:
     return torch.tensor(gt_image)
 
 
+def preprocess_for_gaussian_scene(camera: Camera, gaussian_scene: GaussianScene2) -> Gaussians:
+    extrinsic_matrix = camera.extrinsic_matrix
+    intrinsic_matrix = camera.intrinsic_matrix
+    focal_x = camera.focal_x
+    focal_y = camera.focal_y
+    width = camera.width
+    height = camera.height
+    tile_size = 16
+    preprocessed_gaussians = gaussian_scene.preprocess(
+        extrinsic_matrix=extrinsic_matrix,
+        intrinsic_matrix=intrinsic_matrix,
+        focal_x=focal_x,
+        focal_y=focal_y,
+        width=width,
+        height=height,
+        tile_size=tile_size,
+    )
+    return preprocessed_gaussians
+
+
 if __name__ == "__main__":
     camera = return_camera()
     gaussians = return_gaussians()
@@ -87,3 +108,13 @@ if __name__ == "__main__":
         camera, gaussians, camera.height, camera.width
     )
     print(torch.allclose(output_auto1, output_custom))
+
+    gaussian_scene = GaussianScene2(gaussians=gaussians)
+    preprocessed_gaussians = preprocess_for_gaussian_scene(camera, gaussian_scene)
+    output_scene = gaussian_scene.render_cuda(
+        preprocessed_gaussians=preprocessed_gaussians,
+        height=camera.height,
+        width=camera.width,
+        tile_size=16,
+    )
+    print(torch.allclose(output_auto1, output_scene))
