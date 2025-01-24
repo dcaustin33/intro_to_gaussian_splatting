@@ -1,6 +1,7 @@
 """This file has equivalently named functions that use autograd from checked_covariance_derivatives.py"""
 
 import torch
+import torch.nn as nn
 
 from splat.utils import build_rotation
 
@@ -36,10 +37,11 @@ def covariance_3d_to_covariance_2d_auto(covariance_3d: torch.Tensor, U: torch.Te
 
 def R_S_To_M_auto(R: torch.Tensor, S: torch.Tensor):
     """R is a nx3x3 rotation matrix, S is a nx3x3 scale matrix"""
-    return torch.einsum("nij,njk->nik", R, S)
+    m = torch.einsum("nij,njk->nik", R, S)
+    return m
 
 def M_To_Covariance_auto(M: torch.Tensor):
-    return M.pow(2)
+    return torch.einsum("nij,njk->nik", M, M.transpose(1, 2))
 
 def quats_to_R_auto(quats: torch.Tensor) -> torch.Tensor:
     R = build_rotation(quats, normalize=False)
@@ -47,7 +49,8 @@ def quats_to_R_auto(quats: torch.Tensor) -> torch.Tensor:
 
 def normalize_quats_auto(quats: torch.Tensor):
     """Quats are a nx4 tensor"""
-    return quats / quats.norm(dim=1, keepdim=True)
+    # return quats / quats.norm(dim=1, keepdim=True)
+    return nn.functional.normalize(quats, p=2, dim=1)
 
 def scale_to_s_matrix_auto(s: torch.Tensor):
     """Takes the nx3 tensor and returns the nx3x3 diagonal matrix"""
@@ -60,12 +63,12 @@ def r_s_to_cov_2d_auto(r: torch.Tensor, s: torch.Tensor, U: torch.Tensor):
      U is the J@W matrix. this is a 3x3 matrix.
      In our example its W.t since we are using the OpenGL convention
      """
-
      r = normalize_quats_auto(r)
      R = quats_to_R_auto(r)
      S = scale_to_s_matrix_auto(s)
      M = R_S_To_M_auto(R, S)
      cov_3d = M_To_Covariance_auto(M)
+     print("cov_3d", cov_3d)
      cov_2d = covariance_3d_to_covariance_2d_auto(cov_3d, U)
      inv_cov_2d = invert_2x2_matrix_auto(cov_2d[:, :2, :2])
      return inv_cov_2d

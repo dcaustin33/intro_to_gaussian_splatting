@@ -195,6 +195,7 @@ class GaussianScene2(nn.Module):
             )
         else:
             covariance3d = self.gaussians.get_3d_covariance_matrix()
+            print("covariance3d", covariance3d)
             covariance2d, points_camera_space = self.compute_2d_covariance(
                 points_homogeneous,
                 covariance3d,

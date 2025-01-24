@@ -212,10 +212,10 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
         all_opacity.append(opacity)
         all_color.append(color)
 
-    print("all_final_means_2d", all_final_means_2d)
-    print("inverted_covariance_2d", all_r_s_to_cov_2d)
-    print("opacity", all_opacity)
-    print("color", all_color)
+    # print("all_final_means_2d", all_final_means_2d)
+    # print("inverted_covariance_2d", all_r_s_to_cov_2d)
+    # print("opacity", all_opacity)
+    # print("color", all_color)
     for i in range(height):
         for j in range(width):
             current_t = torch.tensor(1.0)
