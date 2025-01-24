@@ -55,22 +55,23 @@ class Camera:
     height: torch.Tensor
     camera_rotation: torch.Tensor
     camera_translation: torch.Tensor
+    device: torch.device
 
     @property
     def intrinsic_matrix(self):
         return getIntrinsicMatrix(
             self.focal_x, self.focal_y, self.width, self.height
-        ).float()
+        ).float().to(self.device)
 
     @property
     def extrinsic_matrix(self):
         return get_extrinsic_matrix(
             build_rotation(self.camera_rotation), self.camera_translation
-        ).T.float()
+        ).T.float().to(self.device)
 
     @property
     def fovX(self):
-        return compute_fov_from_focal(self.focal_x, self.width)
+        return compute_fov_from_focal(self.focal_x, self.width).to(self.device)
 
     @property
     def fovY(self):
@@ -78,11 +79,11 @@ class Camera:
 
     @property
     def tan_fovX(self):
-        return math.tan(self.fovX / 2)
+        return math.tan(self.fovX / 2).to(self.device)
 
     @property
     def tan_fovY(self):
-        return math.tan(self.fovY / 2)
+        return math.tan(self.fovY / 2).to(self.device)
 
 
 def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
@@ -97,7 +98,7 @@ def compute_j_w_matrix(camera: Camera, points_2d: torch.Tensor):
     points_2d is a nx3 tensor where the last dimension is the depth
     We are expecting the points to already be in camera space
     """
-    j = torch.zeros((points_2d.shape[0], 3, 3)).float()
+    j = torch.zeros((points_2d.shape[0], 3, 3)).float().to(camera.device)
     j[:, 0, 0] = camera.focal_x / points_2d[:, 2]
     j[:, 0, 2] = -(camera.focal_x * points_2d[:, 0]) / (points_2d[:, 2] ** 2)
     j[:, 1, 1] = camera.focal_y / points_2d[:, 2]
@@ -376,8 +377,9 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
     image: Optional[torch.Tensor] = None,
 ):
     """Test creating an image for a single gaussian with everything needing gaussians"""
+    device = gaussians.device
     if image is None:
-        image = torch.zeros((height, width, 3))
+        image = torch.zeros((height, width, 3)).to(device)
 
     all_final_means_2d = []
     all_r_s_to_cov_2d = []
@@ -418,7 +420,7 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
             current_t = torch.tensor(1.0)
             for gaussian_index in range(gaussians.points.shape[0]):
                 color, current_t = render_pixel_auto(
-                    torch.tensor([i, j]),
+                    torch.tensor([i, j], device=device),
                     all_final_means_2d[gaussian_index][:, :2],
                     all_r_s_to_cov_2d[gaussian_index],
                     all_opacity[gaussian_index],

@@ -154,7 +154,7 @@ class GaussianScene2(nn.Module):
         width: float,
         height: float,
         tile_size: int = 16,
-        use_cuda: bool = True,
+        use_cuda: bool = False,
     ) -> None:
         """
         Code to preprocess the Gaussians.
@@ -210,7 +210,9 @@ class GaussianScene2(nn.Module):
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
         points_ndc = points_ndc[:, :3]  # nx3
-        points_in_view_bool_array = self.filter_in_view(points_ndc)
+        # points_in_view_bool_array = self.filter_in_view(points_ndc)
+        print("WARNING: Not filtering in view")
+        points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
         # points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
@@ -508,6 +510,10 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
 
+        print("means", preprocessed_gaussians.means_3d)
+        print("color", preprocessed_gaussians.color)
+        print("opacity", preprocessed_gaussians.opacity)
+        print("inverted_covariance_2d", preprocessed_gaussians.inverted_covariance_2d)
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),

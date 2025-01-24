@@ -21,42 +21,45 @@ from splat.render_engine.gaussianScene2 import GaussianScene2
 
 
 def return_gaussians() -> Gaussians:
-    point_3d1 = torch.tensor([[0.101, 0.1001, -4]], dtype=torch.float64).requires_grad_(
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    point_3d1 = torch.tensor([[0.101, 0.1001, -4]], dtype=torch.float32, device=device).requires_grad_(
         True
     )
-    r1 = torch.tensor([[0.5, 0.02, 0.03, 0.001]], dtype=torch.float64).requires_grad_(
+    r1 = torch.tensor([[0.5, 0.02, 0.03, 0.001]], dtype=torch.float32, device=device).requires_grad_(
         True
     )
-    s1 = torch.tensor([[0.1, 0.15, 0.2]], dtype=torch.float64).requires_grad_(True)
-    color1 = torch.tensor([0.4, 0.6, 0.8], dtype=torch.float64).requires_grad_(True)
-    opacity1 = torch.tensor([0.5], dtype=torch.float64).requires_grad_(True)
+    s1 = torch.tensor([[0.1, 0.15, 0.2]], dtype=torch.float32, device=device).requires_grad_(True)
+    color1 = torch.tensor([0.4, 0.6, 0.8], dtype=torch.float32, device=device).requires_grad_(True)
+    opacity1 = torch.tensor([0.5], dtype=torch.float32, device=device).requires_grad_(True)
 
     point_3d2 = torch.tensor(
-        [[0.0999, 0.0999, -4.1]], dtype=torch.float64
+        [[0.0999, 0.0999, -4.1]], dtype=torch.float32, device=device
     ).requires_grad_(True)
-    r2 = torch.tensor([[0.2, 0.04, 0.03, 0.001]], dtype=torch.float64).requires_grad_(
+    r2 = torch.tensor([[0.2, 0.04, 0.03, 0.001]], dtype=torch.float32, device=device).requires_grad_(
         True
     )
-    s2 = torch.tensor([[0.2, 0.16, 0.1]], dtype=torch.float64).requires_grad_(True)
-    color2 = torch.tensor([0.1, 0.15, 0.2], dtype=torch.float64).requires_grad_(True)
-    opacity2 = torch.tensor([0.9], dtype=torch.float64).requires_grad_(True)
+    s2 = torch.tensor([[0.2, 0.16, 0.1]], dtype=torch.float32, device=device).requires_grad_(True)
+    color2 = torch.tensor([0.1, 0.15, 0.2], dtype=torch.float32, device=device).requires_grad_(True)
+    opacity2 = torch.tensor([0.9], dtype=torch.float32, device=device).requires_grad_(True)
 
     return Gaussians(
-        points=torch.stack([point_3d1, point_3d2]),
-        colors=torch.stack([color1, color2]),
-        scales=torch.stack([s1, s2]),
-        quaternions=torch.stack([r1, r2]),
-        opacity=torch.stack([opacity1, opacity2]),
+        points=torch.stack([point_3d1, point_3d2]).squeeze(1),
+        colors=torch.stack([color1, color2]).squeeze(1),
+        scales=torch.stack([s1, s2]).squeeze(1),
+        quaternions=torch.stack([r1, r2]).squeeze(1),
+        opacity=torch.stack([opacity1, opacity2]).squeeze(1),
+        requires_grad=True
     )
 
 
 def return_camera() -> Camera:
-    focal_x = torch.tensor([100.0])
-    focal_y = torch.tensor([100.0])
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    focal_x = torch.tensor([100.0], device=device)
+    focal_y = torch.tensor([100.0], device=device)
     width = 32
     height = 32
-    camera_rotation = torch.tensor([1, 0, 0, 0]).unsqueeze(0)
-    camera_translation = torch.tensor([[-0.1, -0.1, 0.0]])
+    camera_rotation = torch.tensor([1, 0, 0, 0], device=device).unsqueeze(0)
+    camera_translation = torch.tensor([[-0.1, -0.1, 0.0]], device=device)
 
     return Camera(
         focal_x=focal_x,
@@ -67,6 +70,7 @@ def return_camera() -> Camera:
         height=height,
         camera_rotation=camera_rotation,
         camera_translation=camera_translation,
+        device=device
     )
 
 
@@ -99,7 +103,7 @@ def preprocess_for_gaussian_scene(camera: Camera, gaussian_scene: GaussianScene2
 if __name__ == "__main__":
     camera = return_camera()
     gaussians = return_gaussians()
-    gt_image = return_gt_image()
+    # gt_image = return_gt_image()
 
     output_auto1 = create_image_full_auto_multiple_gaussians_with_splat_gaussians(
         camera, gaussians, camera.height, camera.width
@@ -111,6 +115,7 @@ if __name__ == "__main__":
 
     gaussian_scene = GaussianScene2(gaussians=gaussians)
     preprocessed_gaussians = preprocess_for_gaussian_scene(camera, gaussian_scene)
+    import pdb; pdb.set_trace()
     output_scene = gaussian_scene.render_cuda(
         preprocessed_gaussians=preprocessed_gaussians,
         height=camera.height,

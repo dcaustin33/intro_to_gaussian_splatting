@@ -172,8 +172,9 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
     width: int,
     image: torch.Tensor = None,
 ):
+    device = gaussians.device
     if image is None:
-        image = torch.zeros((height, width, 3))
+        image = torch.zeros((height, width, 3)).to(device)
     all_final_means_2d = []
     all_r_s_to_cov_2d = []
     all_opacity = []
@@ -211,12 +212,16 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
         all_opacity.append(opacity)
         all_color.append(color)
 
+    print("all_final_means_2d", all_final_means_2d)
+    print("inverted_covariance_2d", all_r_s_to_cov_2d)
+    print("opacity", all_opacity)
+    print("color", all_color)
     for i in range(height):
         for j in range(width):
             current_t = torch.tensor(1.0)
             for gaussian_index in range(gaussians.points.shape[0]):
                 color, current_t = render_pixel_custom(
-                    torch.tensor([i, j]),
+                    torch.tensor([i, j], device=device),
                     all_final_means_2d[gaussian_index][:, :2],
                     all_r_s_to_cov_2d[gaussian_index],
                     all_opacity[gaussian_index],
