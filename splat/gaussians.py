@@ -18,7 +18,7 @@ class Gaussians(nn.Module):
         requires_grad: bool = False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.points = points.clone().requires_grad_(requires_grad).to(self.device).float()
+        self.points = points.requires_grad_(requires_grad).to(self.device).float()
         if colors.max() > 1:
             divisor = 256
         else:
@@ -48,6 +48,10 @@ class Gaussians(nn.Module):
             ).to(self.device)
         else:
             self.opacity = opacity.clone().requires_grad_(requires_grad).to(self.device)
+
+    @property
+    def homogeneous_points(self) -> torch.Tensor:
+        return torch.cat([self.points, torch.ones(self.points.shape[0], 1).to(self.device)], dim=1)
 
     def initialize_scale(
         self,

@@ -11,6 +11,7 @@ from pyparsing import List
 import torch
 from matplotlib import pyplot as plt
 
+from splat.gaussians import Gaussians
 from splat.render_engine.utils import compute_fov_from_focal
 from splat.custom_pytorch_implementation.auto_functions import (
     r_s_to_cov_2d_auto,
@@ -59,13 +60,13 @@ class Camera:
     def intrinsic_matrix(self):
         return getIntrinsicMatrix(
             self.focal_x, self.focal_y, self.width, self.height
-        ).double()
+        ).float()
 
     @property
     def extrinsic_matrix(self):
         return get_extrinsic_matrix(
             build_rotation(self.camera_rotation), self.camera_translation
-        ).T.double()
+        ).T.float()
 
     @property
     def fovX(self):
@@ -96,7 +97,7 @@ def compute_j_w_matrix(camera: Camera, points_2d: torch.Tensor):
     points_2d is a nx3 tensor where the last dimension is the depth
     We are expecting the points to already be in camera space
     """
-    j = torch.zeros((points_2d.shape[0], 3, 3)).double()
+    j = torch.zeros((points_2d.shape[0], 3, 3)).float()
     j[:, 0, 0] = camera.focal_x / points_2d[:, 2]
     j[:, 0, 2] = -(camera.focal_x * points_2d[:, 0]) / (points_2d[:, 2] ** 2)
     j[:, 1, 1] = camera.focal_y / points_2d[:, 2]
@@ -355,6 +356,67 @@ def create_image_full_auto_multiple_gaussians(
         for j in range(width):
             current_t = torch.tensor(1.0)
             for gaussian_index in range(len(gaussians)):
+                color, current_t = render_pixel_auto(
+                    torch.tensor([i, j]),
+                    all_final_means_2d[gaussian_index][:, :2],
+                    all_r_s_to_cov_2d[gaussian_index],
+                    all_opacity[gaussian_index],
+                    all_color[gaussian_index],
+                    current_t,
+                )
+                image[i, j] += color[0]
+    return image
+
+
+def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
+    camera: Camera,
+    gaussians: Gaussians,
+    height: int,
+    width: int,
+    image: Optional[torch.Tensor] = None,
+):
+    """Test creating an image for a single gaussian with everything needing gaussians"""
+    if image is None:
+        image = torch.zeros((height, width, 3))
+
+    all_final_means_2d = []
+    all_r_s_to_cov_2d = []
+    all_opacity = []
+    all_color = []
+
+    for gaussian_idx in range(gaussians.points.shape[0]):
+        r = gaussians.quaternions[gaussian_idx: gaussian_idx + 1]
+        s = gaussians.scales[gaussian_idx: gaussian_idx + 1]
+        mean_3d = gaussians.points[gaussian_idx: gaussian_idx + 1]
+        mean_2d = (
+            gaussians.homogeneous_points[gaussian_idx: gaussian_idx + 1]
+            @ camera.extrinsic_matrix
+            @ camera.intrinsic_matrix
+        )
+
+        new_means_2d = mean_2d[:, :2] / mean_2d[:, 3].unsqueeze(1)
+        next_mean_2d = torch.cat([new_means_2d, mean_2d[:, 3].unsqueeze(1)], dim=1)
+
+        pixel_x = ndc2Pix(next_mean_2d[:, 0], dimension=width)
+        pixel_y = ndc2Pix(next_mean_2d[:, 1], dimension=height)
+
+        final_mean_2d = torch.cat(
+            [pixel_x.view(-1, 1), pixel_y.view(-1, 1), next_mean_2d[:, 2].view(-1, 1)],
+            dim=1,
+        )
+        color = gaussians.colors[gaussian_idx: gaussian_idx + 1]
+        opacity = gaussians.opacity[gaussian_idx: gaussian_idx + 1]
+        j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+        r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
+        all_final_means_2d.append(final_mean_2d)
+        all_r_s_to_cov_2d.append(r_s_to_cov_2d)
+        all_opacity.append(opacity)
+        all_color.append(color)
+
+    for i in range(height):
+        for j in range(width):
+            current_t = torch.tensor(1.0)
+            for gaussian_index in range(gaussians.points.shape[0]):
                 color, current_t = render_pixel_auto(
                     torch.tensor([i, j]),
                     all_final_means_2d[gaussian_index][:, :2],

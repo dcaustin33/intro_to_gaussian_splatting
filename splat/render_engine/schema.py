@@ -23,8 +23,6 @@ class PreprocessedGaussian(BaseModel):
     tiles_touched: torch.Tensor
     top_left: torch.Tensor
     bottom_right: torch.Tensor
-    # top_left: List[torch.Tensor]
-    # bottom_right: List[torch.Tensor]
     color: torch.Tensor
     opacity: torch.Tensor
 

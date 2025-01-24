@@ -60,6 +60,7 @@ def r_s_to_cov_2d_auto(r: torch.Tensor, s: torch.Tensor, U: torch.Tensor):
      U is the J@W matrix. this is a 3x3 matrix.
      In our example its W.t since we are using the OpenGL convention
      """
+
      r = normalize_quats_auto(r)
      R = quats_to_R_auto(r)
      S = scale_to_s_matrix_auto(s)

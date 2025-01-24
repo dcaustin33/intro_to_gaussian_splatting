@@ -154,6 +154,7 @@ class GaussianScene2(nn.Module):
         width: float,
         height: float,
         tile_size: int = 16,
+        use_cuda: bool = True,
     ) -> None:
         """
         Code to preprocess the Gaussians.
@@ -177,21 +178,33 @@ class GaussianScene2(nn.Module):
             ],
             dim=1,
         )  # Nx4
-
-        covariance3d = preprocessing.get_3d_covariance_matrix_cuda(
-            self.gaussians.quaternions, self.gaussians.scales
-        ).view(-1, 3, 3)
-        covariance2d, points_camera_space = (
-            preprocessing.get_2d_covariance_matrix_cuda(
-                points_homogeneous.contiguous(),
+        if use_cuda:
+            covariance3d = preprocessing.get_3d_covariance_matrix_cuda(
+                self.gaussians.quaternions, self.gaussians.scales
+            ).view(-1, 3, 3)
+            covariance2d, points_camera_space = (
+                preprocessing.get_2d_covariance_matrix_cuda(
+                    points_homogeneous.contiguous(),
+                    covariance3d,
+                    extrinsic_matrix.to(self.device).contiguous(),
+                    tan_fovX,
+                    tan_fovY,
+                    focal_x,
+                    focal_y,
+                )
+            )
+        else:
+            covariance3d = self.gaussians.get_3d_covariance_matrix()
+            covariance2d, points_camera_space = self.compute_2d_covariance(
+                points_homogeneous,
                 covariance3d,
-                extrinsic_matrix.to(self.device).contiguous(),
+                extrinsic_matrix,
                 tan_fovX,
                 tan_fovY,
                 focal_x,
                 focal_y,
             )
-        )
+
         covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)

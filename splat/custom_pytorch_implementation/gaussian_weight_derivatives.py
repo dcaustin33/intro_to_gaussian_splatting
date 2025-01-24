@@ -107,6 +107,8 @@ class mean_3d_to_camera_space(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean_3d: torch.Tensor, extrinsic_matrix: torch.Tensor):
         ctx.save_for_backward(extrinsic_matrix)
+        print("mean_3d", mean_3d.shape)
+        print("extrinsic_matrix", extrinsic_matrix.shape)
         return torch.einsum("nk, kh->nh", mean_3d, extrinsic_matrix)
     
     @staticmethod
