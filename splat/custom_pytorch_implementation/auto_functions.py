@@ -33,6 +33,8 @@ def covariance_3d_to_covariance_2d_auto(covariance_3d: torch.Tensor, U: torch.Te
     first_mult = torch.einsum("ij,njk->nik", U.transpose(0, 1), covariance_3d)
     # second_mult = first_mult @ U
     second_mult = torch.einsum("nij,jk->nik", first_mult, U)
+    second_mult[:, 0, 0] = second_mult[:, 0, 0] + 0.3
+    second_mult[:, 1, 1] = second_mult[:, 1, 1] + 0.3
     return second_mult
 
 def R_S_To_M_auto(R: torch.Tensor, S: torch.Tensor):
@@ -68,7 +70,6 @@ def r_s_to_cov_2d_auto(r: torch.Tensor, s: torch.Tensor, U: torch.Tensor):
      S = scale_to_s_matrix_auto(s)
      M = R_S_To_M_auto(R, S)
      cov_3d = M_To_Covariance_auto(M)
-     print("cov_3d", cov_3d)
      cov_2d = covariance_3d_to_covariance_2d_auto(cov_3d, U)
      inv_cov_2d = invert_2x2_matrix_auto(cov_2d[:, :2, :2])
      return inv_cov_2d
@@ -92,6 +93,8 @@ def get_alpha_auto(gaussian_strength: torch.Tensor, unactivated_opacity: torch.T
 
 def final_color_auto(color: torch.Tensor, current_T: torch.Tensor, alpha: torch.Tensor):
     test_t = current_T * (1 - alpha)
+    if alpha < 1.0 / 255.0:
+        return torch.zeros_like(color), current_T
     return color * current_T * alpha, test_t
 
 def render_pixel_auto(
@@ -101,9 +104,15 @@ def render_pixel_auto(
     opacity: torch.Tensor,
     color: torch.Tensor,
     current_T: torch.Tensor,
+    verbose: bool = False
 ):
+
     g_weight = gaussian_weight_auto(mean_2d, inv_covariance_2d, pixel_value)
     g_strength = gaussian_exp_auto(g_weight)
     alpha = get_alpha_auto(g_strength, opacity)
+    if verbose:
+        print("alpha", alpha)
     final_color, current_T = final_color_auto(color, current_T, alpha)
+    if verbose:
+        print("color", color)
     return final_color, torch.tensor(current_T)

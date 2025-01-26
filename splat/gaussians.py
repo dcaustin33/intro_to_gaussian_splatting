@@ -91,6 +91,6 @@ class Gaussians(nn.Module):
         return covariance
     
     def get_scaling_matrix(self) -> torch.Tensor:
-        # return torch.exp(self.scales)
         print("WARNING: not using scale activation")
+        # return torch.exp(self.scales)
         return self.scales

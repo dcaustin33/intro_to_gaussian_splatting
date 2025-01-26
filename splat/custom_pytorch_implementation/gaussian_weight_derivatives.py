@@ -11,12 +11,16 @@ class final_color(torch.autograd.Function):
         """Color is a nx3 tensor, weight is a nx1 tensor, alpha is a nx1 tensor"""
         ctx.save_for_backward(color, current_T, alpha)
         test_t = current_T * (1 - alpha)
+        if alpha < 1.0 / 255.0:
+            return torch.zeros_like(color), current_T
         return color * current_T * alpha, test_t
     
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor, grad_test_t: torch.Tensor):
         """Output of forward is a nx3 tensor so the grad_output is a nx3 tensor"""
         color, current_T, alpha = ctx.saved_tensors
+        if alpha < 1.0 / 255.0:
+            return torch.zeros_like(color), None, torch.zeros_like(alpha)
         grad_color = grad_output * current_T * alpha
         grad_alpha = (grad_output * color * current_T).sum(dim=1, keepdim=True)
         return grad_color, None, grad_alpha

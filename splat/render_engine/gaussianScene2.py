@@ -42,6 +42,7 @@ class GaussianScene2(nn.Module):
         points_camera_space = points_homogeneous @ extrinsic_matrix
         x = points_camera_space[:, 0] / points_camera_space[:, 2]
         y = points_camera_space[:, 1] / points_camera_space[:, 2]
+
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
         z = points_camera_space[:, 2]
@@ -56,10 +57,6 @@ class GaussianScene2(nn.Module):
         # overall formula for a normal extrinsic matrix is
         w = extrinsic_matrix[:3, :3]
         t = w @ j.transpose(1, 2)
-        # print("t: ", t)
-        # print("j: ", j)
-        # print("w: ", w)
-        # print("covariance_3d: ", covariance_3d)
         covariance2d = (
             t.transpose(1, 2)
             @ covariance_3d.transpose(1, 2)  # doesnt this not do anything?
@@ -195,11 +192,10 @@ class GaussianScene2(nn.Module):
             )
         else:
             covariance3d = self.gaussians.get_3d_covariance_matrix()
-            print("covariance3d", covariance3d)
             covariance2d, points_camera_space = self.compute_2d_covariance(
                 points_homogeneous,
                 covariance3d,
-                extrinsic_matrix,
+                extrinsic_matrix.to(self.device),
                 tan_fovX,
                 tan_fovY,
                 focal_x,
@@ -214,7 +210,6 @@ class GaussianScene2(nn.Module):
         # points_in_view_bool_array = self.filter_in_view(points_ndc)
         print("WARNING: Not filtering in view")
         points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
-        # points_in_view_bool_array = torch.ones(points_in_view_bool_array.shape, device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
@@ -512,9 +507,10 @@ class GaussianScene2(nn.Module):
         tile_size = 16
 
         print("means", preprocessed_gaussians.means_3d)
-        print("color", preprocessed_gaussians.color)
         print("opacity", preprocessed_gaussians.opacity)
+        print("color", preprocessed_gaussians.color)
         print("inverted_covariance_2d", preprocessed_gaussians.inverted_covariance_2d)
+
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),
