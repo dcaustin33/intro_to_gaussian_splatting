@@ -41,7 +41,7 @@ def create_image_covariance_test_custom(
     covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
-            # image[i, j] = render_pixel(
+            # image[j, i] = render_pixel(
             #     i,
             #     j,
             #     mean_2d[:, :2],
@@ -50,7 +50,7 @@ def create_image_covariance_test_custom(
             #     color,
             #     1.0
             # )[0]
-            image[i, j] = render_pixel_custom(
+            image[j, i] = render_pixel_custom(
                 torch.tensor([i, j]),
                 mean_2d[:, :2],
                 covariance_2d,
@@ -89,11 +89,11 @@ def create_image_full_custom(
 
     color = gaussian.color
     opacity = gaussian.opacity
-    j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+    j_w_matrix = compute_j_w_matrix(camera, gaussian.homogeneous_points)
     covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
     for i in range(height):
         for j in range(width):
-            image[i, j] = render_pixel_custom(
+            image[j, i] = render_pixel_custom(
                 torch.tensor([i, j]),
                 final_mean_2d[:, :2],
                 covariance_2d,
@@ -142,7 +142,7 @@ def create_image_full_custom_multiple_gaussians(
 
         color = gaussian.color
         opacity = gaussian.opacity
-        j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+        j_w_matrix = compute_j_w_matrix(camera, gaussian.homogeneous_points)
         covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
         all_final_means_2d.append(final_mean_2d)
         all_r_s_to_cov_2d.append(covariance_2d)
@@ -161,7 +161,7 @@ def create_image_full_custom_multiple_gaussians(
                     all_color[gaussian_index],
                     current_t,
                 )
-                image[i, j] += color[0]
+                image[j, i] += color[0]
     return image
 
 
@@ -205,17 +205,13 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
 
         color = gaussians.colors[gaussian_idx : gaussian_idx + 1]
         opacity = gaussians.opacity[gaussian_idx : gaussian_idx + 1]
-        j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+        j_w_matrix = compute_j_w_matrix(camera, gaussians.homogeneous_points[gaussian_idx : gaussian_idx + 1])
         covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
         all_final_means_2d.append(final_mean_2d)
         all_r_s_to_cov_2d.append(covariance_2d)
         all_opacity.append(opacity)
         all_color.append(color)
 
-    # print("all_final_means_2d", all_final_means_2d)
-    # print("inverted_covariance_2d", all_r_s_to_cov_2d)
-    # print("opacity", all_opacity)
-    # print("color", all_color)
     for i in range(height):
         for j in range(width):
             current_t = torch.tensor(1.0)
@@ -228,5 +224,5 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
                     all_color[gaussian_index],
                     current_t,
                 )
-                image[i, j] += color[0]
+                image[j, i] += color[0]
     return image

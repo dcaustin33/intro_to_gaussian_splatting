@@ -71,7 +71,7 @@ class Camera:
 
     @property
     def fovX(self):
-        return compute_fov_from_focal(self.focal_x, self.width).to(self.device)
+        return compute_fov_from_focal(self.focal_x, self.width)
 
     @property
     def fovY(self):
@@ -79,11 +79,11 @@ class Camera:
 
     @property
     def tan_fovX(self):
-        return math.tan(self.fovX / 2).to(self.device)
+        return math.tan(self.fovX / 2)
 
     @property
     def tan_fovY(self):
-        return math.tan(self.fovY / 2).to(self.device)
+        return math.tan(self.fovY / 2)
 
 
 def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
@@ -93,18 +93,27 @@ def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
     return (points + 1) * (dimension - 1) * 0.5
 
 
-def compute_j_w_matrix(camera: Camera, points_2d: torch.Tensor):
+def compute_j_w_matrix(camera: Camera, points_homogeneous: torch.Tensor):
     """
     points_2d is a nx3 tensor where the last dimension is the depth
     We are expecting the points to already be in camera space
     """
-    j = torch.zeros((points_2d.shape[0], 3, 3)).float().to(camera.device)
-    j[:, 0, 0] = camera.focal_x / points_2d[:, 2]
-    j[:, 0, 2] = -(camera.focal_x * points_2d[:, 0]) / (points_2d[:, 2] ** 2)
-    j[:, 1, 1] = camera.focal_y / points_2d[:, 2]
-    j[:, 1, 2] = -(camera.focal_y * points_2d[:, 1]) / (points_2d[:, 2] ** 2)
+    j = torch.zeros((points_homogeneous.shape[0], 3, 3)).float().to(camera.device)
+    point_camera_space = points_homogeneous @ camera.extrinsic_matrix
+    x = point_camera_space[:, 0] / point_camera_space[:, 2]
+    y = point_camera_space[:, 1] / point_camera_space[:, 2]
+
+    x = torch.clamp(x, -1.3 * camera.tan_fovX, 1.3 * camera.tan_fovX) * point_camera_space[:, 2]
+    y = torch.clamp(y, -1.3 * camera.tan_fovY, 1.3 * camera.tan_fovY) * point_camera_space[:, 2]
+
+    j[:, 0, 0] = camera.focal_x / point_camera_space[:, 2]
+    j[:, 0, 2] = -(camera.focal_x * point_camera_space[:, 0]) / (point_camera_space[:, 2] ** 2)
+    j[:, 1, 1] = camera.focal_y / point_camera_space[:, 2]
+    j[:, 1, 2] = -(camera.focal_y * point_camera_space[:, 1]) / (point_camera_space[:, 2] ** 2)
     w = camera.extrinsic_matrix[:3, :3]
-    return j @ w.transpose(0, 1)
+
+    return w @ j.transpose(1, 2)
+
 
 
 def compute_2d_covariance(
@@ -227,7 +236,7 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     print("gaussian.opacity", gaussian.opacity)
     for i in range(height):
         for j in range(width):
-            image[i, j] = render_pixel(
+            image[j, i] = render_pixel(
                 i,
                 j,
                 point_ndc[:, :2],
@@ -254,7 +263,7 @@ def create_image_covariance_test_auto(
 
     for i in range(height):
         for j in range(width):
-            image[i, j] = render_pixel(
+            image[j, i] = render_pixel(
                 i, j, mean_2d[:, :2], r_s_to_cov_2d, opacity, color, 1.0
             )[0]
     return image, torch.tensor(1.0)
@@ -290,20 +299,20 @@ def create_image_full_auto(
     )
     color = gaussian.color
     opacity = gaussian.opacity
-    j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+    j_w_matrix = compute_j_w_matrix(camera, gaussian.homogeneous_points)
     r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
     if current_Ts is None:
         current_Ts = torch.ones((height, width))
     output_ts = torch.ones((height, width))
     for i in range(height):
         for j in range(width):
-            image[i, j], output_ts[i, j] = render_pixel_auto(
+            image[j, i], output_ts[j, i] = render_pixel_auto(
                 torch.tensor([i, j]),
                 final_mean_2d[:, :2],
                 r_s_to_cov_2d,
                 opacity,
                 color,
-                current_Ts[i, j],
+                current_Ts[j, i],
             )
     return image, output_ts
 
@@ -346,7 +355,7 @@ def create_image_full_auto_multiple_gaussians(
         )
         color = gaussian.color
         opacity = gaussian.opacity
-        j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+        j_w_matrix = compute_j_w_matrix(camera, gaussian.homogeneous_points)
         r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
         all_final_means_2d.append(final_mean_2d)
         all_r_s_to_cov_2d.append(r_s_to_cov_2d)
@@ -365,7 +374,7 @@ def create_image_full_auto_multiple_gaussians(
                     all_color[gaussian_index],
                     current_t,
                 )
-                image[i, j] += color[0]
+                image[j, i] += color[0]
     return image
 
 
@@ -397,8 +406,7 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
         )
 
         new_means_2d = mean_2d[:, :2] / mean_2d[:, 3].unsqueeze(1)
-        next_mean_2d = torch.cat([new_means_2d, mean_2d[:, 3].unsqueeze(1)], dim=1)
-
+        next_mean_2d = torch.cat([new_means_2d, mean_2d[:, 2].unsqueeze(1)], dim=1)
         pixel_x = ndc2Pix(next_mean_2d[:, 0], dimension=width)
         pixel_y = ndc2Pix(next_mean_2d[:, 1], dimension=height)
 
@@ -408,17 +416,25 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
         )
         color = gaussians.colors[gaussian_idx: gaussian_idx + 1]
         opacity = gaussians.opacity[gaussian_idx: gaussian_idx + 1]
-        j_w_matrix = compute_j_w_matrix(camera, mean_3d)
+        j_w_matrix = compute_j_w_matrix(camera, gaussians.homogeneous_points[gaussian_idx: gaussian_idx + 1])
         r_s_to_cov_2d = r_s_to_cov_2d_auto(r, s, j_w_matrix)
         all_final_means_2d.append(final_mean_2d)
         all_r_s_to_cov_2d.append(r_s_to_cov_2d)
         all_opacity.append(opacity)
         all_color.append(color)
 
+    print("all_final_means_2d", all_final_means_2d)
+    print("all_opacity", all_opacity)
+    print("all_color", all_color)
+    print("inverted_covariance", all_r_s_to_cov_2d)
+    target_pixel_x = 3
+    target_pixel_y = 0
     for i in range(height):
         for j in range(width):
             current_t = torch.tensor(1.0)
             for gaussian_index in range(gaussians.points.shape[0]):
+                if i == target_pixel_x and j == target_pixel_y:
+                    print("current_t", current_t)
                 color, current_t = render_pixel_auto(
                     torch.tensor([i, j], device=device),
                     all_final_means_2d[gaussian_index][:, :2],
@@ -426,6 +442,7 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
                     all_opacity[gaussian_index],
                     all_color[gaussian_index],
                     current_t,
+                    verbose=(i == target_pixel_x and j == target_pixel_y),
                 )
-                image[i, j] += color[0]
+                image[j, i] += color[0]
     return image

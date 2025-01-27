@@ -116,16 +116,16 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    int target_pixel_x = 0;
+    int target_pixel_x = 3;
     int target_pixel_y = 0;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
 #ifdef PRINT_DEBUG
-    // if (tile_x != target_tile_x && tile_y != target_tile_y)
-    // {
-    //     return;
-    // }
+    if (tile_x != target_tile_x && tile_y != target_tile_y)
+    {
+        return;
+    }
 #endif
 
     // then we have to load and if their tile does not match we indicate done in

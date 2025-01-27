@@ -115,6 +115,8 @@ class covariance_3d_to_covariance_2d(torch.autograd.Function):
         """
         ctx.save_for_backward(U, covariance_3d)
         outcome = torch.bmm(U.transpose(1, 2), torch.bmm(covariance_3d, U))
+        outcome[:, 0, 0] = outcome[:, 0, 0] + 0.3
+        outcome[:, 1, 1] = outcome[:, 1, 1] + 0.3
         return outcome
 
     @staticmethod
@@ -155,12 +157,12 @@ class M_To_Covariance(torch.autograd.Function):
     def forward(ctx, M: torch.Tensor):
         """Normal would be M@M.T but equivalent for our scenario"""
         ctx.save_for_backward(M)
-        return M.pow(2)
+        return M @ M.transpose(1, 2)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         M = ctx.saved_tensors[0]
-        return 2 * grad_output * M
+        return grad_output @ M + grad_output.transpose(1, 2) @ M
 
 
 def d_r_wrt_qr(quats: torch.Tensor, n: int) -> torch.Tensor:
