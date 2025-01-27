@@ -207,9 +207,9 @@ class GaussianScene2(nn.Module):
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
         points_ndc = points_ndc[:, :3]  # nx3
-        # points_in_view_bool_array = self.filter_in_view(points_ndc)
-        print("WARNING: Not filtering in view")
-        points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
+        points_in_view_bool_array = self.filter_in_view(points_ndc)
+        # print("WARNING: Not filtering in view")
+        # points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
         points_ndc = points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
@@ -506,10 +506,96 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
 
-        print("means", preprocessed_gaussians.means_3d)
-        print("opacity", preprocessed_gaussians.opacity)
-        print("color", preprocessed_gaussians.color)
-        print("inverted_covariance_2d", preprocessed_gaussians.inverted_covariance_2d)
+        # print("means", preprocessed_gaussians.means_3d)
+        # print("opacity", preprocessed_gaussians.opacity)
+        # print("color", preprocessed_gaussians.color)
+        # print("inverted_covariance_2d", preprocessed_gaussians.inverted_covariance_2d)
+
+        image = render_tile_cuda.render_tile_cuda(
+            tile_size,
+            preprocessed_gaussians.means_3d.contiguous(),
+            preprocessed_gaussians.color.contiguous(),
+            preprocessed_gaussians.opacity.contiguous(),
+            preprocessed_gaussians.inverted_covariance_2d.contiguous(),
+            image.contiguous(),
+            starting_indices.contiguous(),
+            final_tile_indices.contiguous(),
+            array_indices.contiguous(),
+            height,
+            width,
+            len(preprocessed_gaussians.tiles_touched),
+            array.shape[0],
+        )
+        return image
+
+    def render_cuda_backwards_pass(
+        self,
+        preprocessed_gaussians: PreprocessedGaussian,
+        height: int,
+        width: int,
+        tile_size: int = 16,
+        test: bool = False,
+    ) -> None:
+        """
+        Rendering function - it will do all the steps to render
+        the scene similar to the kernels the original authors use
+        """
+        if test:
+            preprocessed_gaussians = self.create_test_preprocessed_gaussians()
+            height = 32
+            width = 16
+
+        prefix_sum = torch.cumsum(
+            preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0
+        )
+
+        array = torch.zeros(
+            (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
+        )
+        # the first 32 bits will be the x_index of the tile
+        # the next 32 bits will be the y_index of the tile
+        # the last 32 bits will be the z depth of the gaussian
+        array = preprocessing.create_key_to_tile_map_cuda(
+            array,
+            preprocessed_gaussians.means_3d.contiguous(),
+            preprocessed_gaussians.top_left.contiguous(),
+            preprocessed_gaussians.bottom_right.contiguous(),
+            prefix_sum,
+        )
+        # sort the array by the x and y coordinates
+        # First, sort by 'z' coordinate
+        _, indices = torch.sort(array[:, 2], stable=True)
+        array = array[indices]
+
+        # Then, sort by 'y' coordinate
+        _, indices = torch.sort(array[:, 1], stable=True)
+        array = array[indices]
+
+        # Finally, sort by 'x' coordinate
+        _, indices = torch.sort(array[:, 0], stable=True)
+        array = array[indices]
+        starting_indices = preprocessing.get_start_idx_cuda(
+            array.contiguous(),
+            math.ceil(width / tile_size),
+            math.ceil(height / tile_size),
+        )
+
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
+
+        tile_indices = array[:, 0:2].int()
+        array_indices = array[:, 3].int()
+        starting_indices = starting_indices.int()
+        final_tile_indices = (
+            tile_indices[:, 1] * starting_indices.shape[1] + tile_indices[:, 0]
+        )
+
+        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
+        tile_size = 16
+
+        gaussian_mean_3d_grad = torch.zeros_like(preprocessed_gaussians.means_3d)
+        color_grad = torch.zeros_like(preprocessed_gaussians.color)
+        opacity_grad = torch.zeros_like(preprocessed_gaussians.opacity)
+        inverted_covariance_2d_grad = torch.zeros_like(preprocessed_gaussians.inverted_covariance_2d)
 
         image = render_tile_cuda.render_tile_cuda(
             tile_size,
