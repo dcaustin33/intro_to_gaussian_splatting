@@ -171,6 +171,7 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
     height: int,
     width: int,
     image: torch.Tensor = None,
+    verbose: bool = False,
 ):
     device = gaussians.device
     if image is None:
@@ -183,7 +184,6 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
     for gaussian_idx in range(gaussians.points.shape[0]):
         r = gaussians.quaternions[gaussian_idx : gaussian_idx + 1]
         s = gaussians.scales[gaussian_idx : gaussian_idx + 1]
-        mean_3d = gaussians.points[gaussian_idx : gaussian_idx + 1]
 
         camera_space_mean = mean_3d_to_camera_space.apply(
             gaussians.homogeneous_points[gaussian_idx : gaussian_idx + 1],
@@ -212,8 +212,12 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
         all_opacity.append(opacity)
         all_color.append(color)
 
+    target_pixel_x = 17
+    target_pixel_y = 16
     for i in range(height):
         for j in range(width):
+            if (i != target_pixel_x or j != target_pixel_y) and verbose:
+                continue
             current_t = torch.tensor(1.0)
             for gaussian_index in range(gaussians.points.shape[0]):
                 color, current_t = render_pixel_custom(

@@ -23,6 +23,23 @@ setup(
             },
         ),
         CUDAExtension(
+            "splat.c.render_engine_backwards",
+            ["splat/c/render_engine_backwards.cu"],
+            include_dirs=[
+                pybind11.get_include(),
+            ],
+            extra_compile_args={
+                "nvcc": [
+                    "-O3",
+                    "-std=c++17",
+                    "-Xcompiler",
+                    "-fPIC",
+                    "-arch=sm_61",
+                ],
+                "cxx": ["-O3", "-std=c++17"],
+            },
+        ),
+        CUDAExtension(
             "splat.c.preprocessing",
             ["splat/c/preprocessing.cu"],
             include_dirs=[

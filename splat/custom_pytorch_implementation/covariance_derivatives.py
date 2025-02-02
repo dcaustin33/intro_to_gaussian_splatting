@@ -176,7 +176,7 @@ def d_r_wrt_qr(quats: torch.Tensor, n: int) -> torch.Tensor:
     qj = quats[:, 2]
     qk = quats[:, 3]
 
-    derivative = torch.zeros((n, 3, 3))
+    derivative = torch.zeros((n, 3, 3), device=quats.device)
     derivative[:, 0, 1] = -qk
     derivative[:, 0, 2] = qj
     derivative[:, 1, 0] = qk
@@ -198,7 +198,7 @@ def d_r_wrt_qi(quats: torch.Tensor, n: int) -> torch.Tensor:
     qj = quats[:, 2]
     qk = quats[:, 3]
 
-    derivative = torch.zeros((n, 3, 3))
+    derivative = torch.zeros((n, 3, 3), device=quats.device)
     derivative[:, 0, 1] = qj
     derivative[:, 0, 2] = qk
     derivative[:, 1, 0] = qj
@@ -221,7 +221,7 @@ def d_r_wrt_qj(quats: torch.Tensor, n: int) -> torch.Tensor:
     qj = quats[:, 2]
     qk = quats[:, 3]
 
-    derivative = torch.zeros((n, 3, 3))
+    derivative = torch.zeros((n, 3, 3), device=quats.device)
     derivative[:, 0, 0] = -2 * qj
     derivative[:, 0, 1] = qi
     derivative[:, 0, 2] = qr
@@ -245,7 +245,7 @@ def d_r_wrt_qk(quats: torch.Tensor, n: int) -> torch.Tensor:
     qj = quats[:, 2]
     qk = quats[:, 3]
 
-    derivative = torch.zeros((n, 3, 3))
+    derivative = torch.zeros((n, 3, 3), device=quats.device)
     derivative[:, 0, 0] = -2 * qk
     derivative[:, 0, 1] = -qr
     derivative[:, 0, 2] = qi

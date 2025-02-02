@@ -17,8 +17,8 @@ from splat.render_engine.utils import (
 from splat.utils import extract_gaussian_weight, ndc2Pix
 
 if torch.cuda.is_available():
-    from splat.c import render_tile_cuda
     from splat.c import preprocessing
+    from splat.render_engine.autograd import autograd_render_tile_cuda
 
 
 class GaussianScene2(nn.Module):
@@ -64,9 +64,12 @@ class GaussianScene2(nn.Module):
         )
         # scale by 0.3 for the covariance and numerical stability on the diagonal
         # this is a hack to make the covariance matrix more stable
-        covariance2d[:, 0, 0] = covariance2d[:, 0, 0] + 0.3
-        covariance2d[:, 1, 1] = covariance2d[:, 1, 1] + 0.3
-        return covariance2d[:, :2, :2], points_camera_space
+        final_covariance_2d = torch.zeros_like(covariance2d)
+        final_covariance_2d[:, 0, 0] = covariance2d[:, 0, 0] + 0.3
+        final_covariance_2d[:, 1, 1] = covariance2d[:, 1, 1] + 0.3
+        final_covariance_2d[:, 0, 1] = covariance2d[:, 0, 1]
+        final_covariance_2d[:, 1, 0] = covariance2d[:, 1, 0]
+        return final_covariance_2d[:, :2, :2], points_camera_space
 
     def filter_in_view(
         self, points_ndc: torch.Tensor, znear: float = 0.2
@@ -205,12 +208,15 @@ class GaussianScene2(nn.Module):
         covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
-        points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
-        points_ndc = points_ndc[:, :3]  # nx3
-        points_in_view_bool_array = self.filter_in_view(points_ndc)
+        non_in_place_points_ndc = torch.zeros_like(points_ndc)
+        non_in_place_points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
+        non_in_place_points_ndc[:, 2] = points_ndc[:, 2]
+        # points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
+        # points_ndc = points_ndc[:, :3]  # nx3
+        points_in_view_bool_array = self.filter_in_view(non_in_place_points_ndc)
         # print("WARNING: Not filtering in view")
         # points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
-        points_ndc = points_ndc[points_in_view_bool_array]
+        final_points_ndc = non_in_place_points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
         opacity = self.gaussians.opacity[points_in_view_bool_array].to(self.device)
@@ -218,18 +224,17 @@ class GaussianScene2(nn.Module):
         inverted_covariance_2d = invert_covariance_2d(covariance2d)
         radius = compute_radius_from_covariance_2d(covariance2d)
 
-        points_pixel_coords_x = ndc2Pix(points_ndc[:, 0], dimension=width)
-        points_pixel_coords_y = ndc2Pix(points_ndc[:, 1], dimension=height)
-        points_ndc[:, 0] = points_pixel_coords_x
-        points_ndc[:, 1] = points_pixel_coords_y
+        points_pixel_coords_x = ndc2Pix(final_points_ndc[:, 0], dimension=width).view(-1, 1)
+        points_pixel_coords_y = ndc2Pix(final_points_ndc[:, 1], dimension=height).view(-1, 1)
+        final_mean = torch.cat([points_pixel_coords_x, points_pixel_coords_y, final_points_ndc[:, 2].view(-1, 1)], dim=1)
         tiles_touched, top_left, bottom_right = self.compute_tiles_touched(
-            points_ndc[:, 0:2], radius, tile_size, height, width
+            final_mean[:, 0:2], radius, tile_size, height, width
         )
 
         top_left = torch.stack([top_left[0], top_left[1]]).to(self.device)
         bottom_right = torch.stack([bottom_right[0], bottom_right[1]]).to(self.device)
         return PreprocessedGaussian(
-            means_3d=points_ndc,
+            means_3d=final_mean,
             covariance_2d=covariance2d,
             radius=radius,
             inverted_covariance_2d=inverted_covariance_2d,
@@ -449,7 +454,7 @@ class GaussianScene2(nn.Module):
         width: int,
         tile_size: int = 16,
         test: bool = False,
-    ) -> None:
+    ) -> torch.Tensor:
         """
         Rendering function - it will do all the steps to render
         the scene similar to the kernels the original authors use
@@ -506,98 +511,7 @@ class GaussianScene2(nn.Module):
         image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
         tile_size = 16
 
-        # print("means", preprocessed_gaussians.means_3d)
-        # print("opacity", preprocessed_gaussians.opacity)
-        # print("color", preprocessed_gaussians.color)
-        # print("inverted_covariance_2d", preprocessed_gaussians.inverted_covariance_2d)
-
-        image = render_tile_cuda.render_tile_cuda(
-            tile_size,
-            preprocessed_gaussians.means_3d.contiguous(),
-            preprocessed_gaussians.color.contiguous(),
-            preprocessed_gaussians.opacity.contiguous(),
-            preprocessed_gaussians.inverted_covariance_2d.contiguous(),
-            image.contiguous(),
-            starting_indices.contiguous(),
-            final_tile_indices.contiguous(),
-            array_indices.contiguous(),
-            height,
-            width,
-            len(preprocessed_gaussians.tiles_touched),
-            array.shape[0],
-        )
-        return image
-
-    def render_cuda_backwards_pass(
-        self,
-        preprocessed_gaussians: PreprocessedGaussian,
-        height: int,
-        width: int,
-        tile_size: int = 16,
-        test: bool = False,
-    ) -> None:
-        """
-        Rendering function - it will do all the steps to render
-        the scene similar to the kernels the original authors use
-        """
-        if test:
-            preprocessed_gaussians = self.create_test_preprocessed_gaussians()
-            height = 32
-            width = 16
-
-        prefix_sum = torch.cumsum(
-            preprocessed_gaussians.tiles_touched.to(torch.int64), dim=0
-        )
-
-        array = torch.zeros(
-            (prefix_sum[-1], 4), device=self.device, dtype=torch.float32
-        )
-        # the first 32 bits will be the x_index of the tile
-        # the next 32 bits will be the y_index of the tile
-        # the last 32 bits will be the z depth of the gaussian
-        array = preprocessing.create_key_to_tile_map_cuda(
-            array,
-            preprocessed_gaussians.means_3d.contiguous(),
-            preprocessed_gaussians.top_left.contiguous(),
-            preprocessed_gaussians.bottom_right.contiguous(),
-            prefix_sum,
-        )
-        # sort the array by the x and y coordinates
-        # First, sort by 'z' coordinate
-        _, indices = torch.sort(array[:, 2], stable=True)
-        array = array[indices]
-
-        # Then, sort by 'y' coordinate
-        _, indices = torch.sort(array[:, 1], stable=True)
-        array = array[indices]
-
-        # Finally, sort by 'x' coordinate
-        _, indices = torch.sort(array[:, 0], stable=True)
-        array = array[indices]
-        starting_indices = preprocessing.get_start_idx_cuda(
-            array.contiguous(),
-            math.ceil(width / tile_size),
-            math.ceil(height / tile_size),
-        )
-
-        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
-
-        tile_indices = array[:, 0:2].int()
-        array_indices = array[:, 3].int()
-        starting_indices = starting_indices.int()
-        final_tile_indices = (
-            tile_indices[:, 1] * starting_indices.shape[1] + tile_indices[:, 0]
-        )
-
-        image = torch.zeros((height, width, 3), device=self.device, dtype=torch.float32)
-        tile_size = 16
-
-        gaussian_mean_3d_grad = torch.zeros_like(preprocessed_gaussians.means_3d)
-        color_grad = torch.zeros_like(preprocessed_gaussians.color)
-        opacity_grad = torch.zeros_like(preprocessed_gaussians.opacity)
-        inverted_covariance_2d_grad = torch.zeros_like(preprocessed_gaussians.inverted_covariance_2d)
-
-        image = render_tile_cuda.render_tile_cuda(
+        image = autograd_render_tile_cuda.apply(
             tile_size,
             preprocessed_gaussians.means_3d.contiguous(),
             preprocessed_gaussians.color.contiguous(),

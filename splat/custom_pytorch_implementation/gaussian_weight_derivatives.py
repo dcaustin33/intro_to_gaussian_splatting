@@ -19,6 +19,9 @@ class final_color(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor, grad_test_t: torch.Tensor):
         """Output of forward is a nx3 tensor so the grad_output is a nx3 tensor"""
         color, current_T, alpha = ctx.saved_tensors
+        # if grad_output.sum() != 0:
+        #     print("grad_output in custom:", grad_output)
+        #     print("alpha:", alpha, "current_T:", current_T)
         if alpha < 1.0 / 255.0:
             return torch.zeros_like(color), None, torch.zeros_like(alpha)
         grad_color = grad_output * current_T * alpha

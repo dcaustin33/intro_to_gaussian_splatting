@@ -30,3 +30,16 @@ class PreprocessedGaussian(BaseModel):
         "arbitrary_types_allowed": True
     }
 
+    def clone(self) -> "PreprocessedGaussian":
+        return PreprocessedGaussian(
+            means_3d=self.means_3d.clone(),
+            covariance_2d=self.covariance_2d.clone(),
+            inverted_covariance_2d=self.inverted_covariance_2d.clone(),
+            radius=self.radius.clone(),
+            tiles_touched=self.tiles_touched.clone(),
+            top_left=self.top_left.clone(),
+            bottom_right=self.bottom_right.clone(),
+            color=self.color.clone(),
+            opacity=self.opacity.clone(),
+        )
+

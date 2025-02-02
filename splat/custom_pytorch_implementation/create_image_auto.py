@@ -384,11 +384,12 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
     height: int,
     width: int,
     image: Optional[torch.Tensor] = None,
+    verbose: bool = False,
 ):
     """Test creating an image for a single gaussian with everything needing gaussians"""
     device = gaussians.device
     if image is None:
-        image = torch.zeros((height, width, 3)).to(device)
+        image = torch.zeros((height, width, 3), dtype=torch.float32).to(device)
 
     all_final_means_2d = []
     all_r_s_to_cov_2d = []
@@ -423,17 +424,22 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
         all_opacity.append(opacity)
         all_color.append(color)
 
-    print("all_final_means_2d", all_final_means_2d)
-    print("all_opacity", all_opacity)
-    print("all_color", all_color)
-    print("inverted_covariance", all_r_s_to_cov_2d)
-    target_pixel_x = 3
-    target_pixel_y = 0
+    print("all_final_means_2d", all_final_means_2d[0].dtype)
+    print("all_opacity", all_opacity[0].dtype)
+    print("all_color", all_color[0].dtype)
+    print("inverted_covariance", all_r_s_to_cov_2d[0].dtype)
+    print("camera intrinsic matrix", camera.intrinsic_matrix.dtype)
+    print("camera extrinsic matrix", camera.extrinsic_matrix.dtype)
+
+    target_pixel_x = 17
+    target_pixel_y = 16
     for i in range(height):
         for j in range(width):
+            if (i != target_pixel_x or j != target_pixel_y) and verbose:
+                continue
             current_t = torch.tensor(1.0)
             for gaussian_index in range(gaussians.points.shape[0]):
-                if i == target_pixel_x and j == target_pixel_y:
+                if i == target_pixel_x and j == target_pixel_y and verbose:
                     print("current_t", current_t)
                 color, current_t = render_pixel_auto(
                     torch.tensor([i, j], device=device),
@@ -442,7 +448,7 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
                     all_opacity[gaussian_index],
                     all_color[gaussian_index],
                     current_t,
-                    verbose=(i == target_pixel_x and j == target_pixel_y),
+                    verbose=((i == target_pixel_x and j == target_pixel_y) and verbose),
                 )
                 image[j, i] += color[0]
     return image

@@ -35,7 +35,13 @@ void check_inputs(
     torch::Tensor image,
     torch::Tensor starting_tile_indices,
     torch::Tensor tile_idx,
-    torch::Tensor array_indices)
+    torch::Tensor array_indices,
+    torch::Tensor dl_dpixel,
+    torch::Tensor dl_dpoint_means,
+    torch::Tensor dl_dpoint_colors,
+    torch::Tensor dl_dpoint_opacities,
+    torch::Tensor dl_dinverted_covariance_2d
+)
 {
     CHECK_INPUT(point_means);
     CHECK_INPUT(point_colors);
@@ -79,7 +85,7 @@ __device__ float compute_pixel_strength(
     return exp(-0.5f * power);
 }
 
-__global__ void render_tile_kernel(
+__global__ void render_tile_kernel_backwards(
     int tile_size,
     float* point_means,
     float* point_colors,
@@ -94,9 +100,9 @@ __global__ void render_tile_kernel(
     int num_points,
     int num_array_points,
     float* dl_dpixel,
-    float* dl_dpoint_means,
-    float* dl_dpoint_colors,
-    float* dl_dpoint_opacities,
+    float* dl_dmeans,
+    float* dl_dcolors,
+    float* dl_dopacities,
     float* dl_dinverted_covariance_2d
     )
 {
@@ -129,8 +135,8 @@ __global__ void render_tile_kernel(
         done = true;
     }
 
-    int target_pixel_x = 3;
-    int target_pixel_y = 0;
+    int target_pixel_x = 17;
+    int target_pixel_y = 16;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
@@ -158,6 +164,7 @@ __global__ void render_tile_kernel(
     {
         return;
     }
+    int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
 
     while (true)
     {
@@ -264,21 +271,35 @@ __global__ void render_tile_kernel(
                     color.x += total_weight * alpha_value * shared_point_colors[i * 3];
                     color.y += total_weight * alpha_value * shared_point_colors[i * 3 + 1];
                     color.z += total_weight * alpha_value * shared_point_colors[i * 3 + 2];
+                    float current_T = total_weight;
                     total_weight = test_T;
                     // TODO: this is where the backwards pass will happen as we know it has contributed
                     int gaussian_idx = shared_gaussian_idx[i];
-                    dl_d_color[gaussian_idx * 3] += dl_dpixel[pixel_x * 3 + 0] * alpha_value * total_weight;
-                    dl_d_color[gaussian_idx * 3 + 1] += dl_dpixel[pixel_x * 3 + 1] * alpha_value * total_weight;
-                    dl_d_color[gaussian_idx * 3 + 2] += dl_dpixel[pixel_x * 3 + 2] * alpha_value * total_weight;
 
-                    // derivate to be used for alpha - this likely does not need to be shared memory
-                    dl_dalpha[gaussian_idx] += dl_dpixel[pixel_x * 3 + 0] * shared_point_colors[i * 3] * total_weight;
-                    dl_dalpha[gaussian_idx] += dl_dpixel[pixel_x * 3 + 1] * shared_point_colors[i * 3 + 1] * total_weight;
-                    dl_dalpha[gaussian_idx] += dl_dpixel[pixel_x * 3 + 2] * shared_point_colors[i * 3 + 2] * total_weight;
+#ifdef PRINT_DEBUG
+                    if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
+                    {
+                        printf("gaussian_idx: %d\n", gaussian_idx);
+                        printf("dl_dcolors: %f, %f, %f\n", dl_dcolors[gaussian_idx * 3], dl_dcolors[gaussian_idx * 3 + 1], dl_dcolors[gaussian_idx * 3 + 2]);
+                        printf("dl_dpixel: %f, %f, %f\n", dl_dpixel[pixel_idx + 0], dl_dpixel[pixel_idx + 1], dl_dpixel[pixel_idx + 2]);
+                        printf("alpha_value: %f, current_T: %f\n", alpha_value, current_T);
+                    }
+#endif
+
+                    if (pixel_idx + 2 < image_width * image_height * 3){
+                        atomicAdd(&dl_dcolors[gaussian_idx * 3], dl_dpixel[pixel_idx + 0] * alpha_value * current_T);
+                        atomicAdd(&dl_dcolors[gaussian_idx * 3 + 1], dl_dpixel[pixel_idx + 1] * alpha_value * current_T);
+                        atomicAdd(&dl_dcolors[gaussian_idx * 3 + 2], dl_dpixel[pixel_idx + 2] * alpha_value * current_T);
+                    }
+
+                    // // derivate to be used for alpha - this likely does not need to be shared memory
+                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 0] * shared_point_colors[i * 3] * total_weight);
+                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 1] * shared_point_colors[i * 3 + 1] * total_weight);
+                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 2] * shared_point_colors[i * 3 + 2] * total_weight);
                 
-                    // derivative wrt unactivated opacity
-                    float derivative_sigmoid = sigmoid(shared_point_opacities[i]) * (1 - sigmoid(shared_point_opacities[i]));
-                    dl_dopacity[gaussian_idx] += dl_dalpha[gaussian_idx] * derivative_sigmoid * gaussian_strength;
+                    // // derivative wrt unactivated opacity
+                    // float derivative_sigmoid = sigmoid(shared_point_opacities[i]) * (1 - sigmoid(shared_point_opacities[i]));
+                    // atomicAdd(&dl_dopacities[gaussian_idx], dl_dalpha[gaussian_idx] * derivative_sigmoid * gaussian_strength);
                 
                 }
             }
@@ -298,7 +319,6 @@ __global__ void render_tile_kernel(
 #endif
     if (pixel_x < image_width && pixel_y < image_height)
     {
-        int pixel_idx = (pixel_y * image_width + pixel_x) * 3;
         if (pixel_idx + 2 < image_width * image_height * 3)
         {
             image[pixel_idx] = color.x;
@@ -308,7 +328,7 @@ __global__ void render_tile_kernel(
     }
 }
 
-torch::Tensor render_tile_cuda(
+torch::Tensor render_tile_cuda_backwards(
     int tile_size,
     torch::Tensor point_means,
     torch::Tensor point_colors,
@@ -321,8 +341,16 @@ torch::Tensor render_tile_cuda(
     int image_height,
     int image_width,
     int num_points,
-    int num_array_points)
+    int num_array_points,
+    torch::Tensor dl_dpixel,
+    torch::Tensor dl_dpoint_means,
+    torch::Tensor dl_dpoint_colors,
+    torch::Tensor dl_dpoint_opacities,
+    torch::Tensor dl_dinverted_covariance_2d
+)
 {
+    // have to put the tile_size and other ints into tensors to save
+    // in the torch autograd
     check_inputs(
         point_means,
         point_colors,
@@ -331,7 +359,13 @@ torch::Tensor render_tile_cuda(
         image,
         starting_tile_indices,
         tile_idx,
-        array_indices);
+        array_indices,
+        dl_dpixel,
+        dl_dpoint_means,
+        dl_dpoint_colors,
+        dl_dpoint_opacities,
+        dl_dinverted_covariance_2d
+    );
     if (tile_size != TILE_SIZE)
     {
         throw std::runtime_error("Tile size must be 16 or TILE_SIZE in c code must change");
@@ -344,7 +378,7 @@ torch::Tensor render_tile_cuda(
     torch::Tensor image_new = torch::ones({image_height, image_width, 3}, image.options());
 
     // print the amount of elements in image tensor
-    render_tile_kernel<<<grid_size, block_size>>>(
+    render_tile_kernel_backwards<<<grid_size, block_size>>>(
         tile_size,
         point_means.data_ptr<float>(),
         point_colors.data_ptr<float>(),
@@ -357,14 +391,20 @@ torch::Tensor render_tile_cuda(
         image_height,
         image_width,
         num_points,
-        num_array_points);
+        num_array_points,
+        dl_dpixel.data_ptr<float>(),
+        dl_dpoint_means.data_ptr<float>(),
+        dl_dpoint_colors.data_ptr<float>(),
+        dl_dpoint_opacities.data_ptr<float>(),
+        dl_dinverted_covariance_2d.data_ptr<float>()
+    );
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
     return image;
 }
 
-PYBIND11_MODULE(render_tile_cuda, m)
+PYBIND11_MODULE(render_engine_backwards, m)
 {
-    m.def("render_tile_cuda", &render_tile_cuda, "Render a tile of the image");
+    m.def("render_tile_cuda_backwards", &render_tile_cuda_backwards, "Perform the backwards pass for the tile");
 }
