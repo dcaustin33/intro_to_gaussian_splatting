@@ -19,6 +19,7 @@ from splat.custom_pytorch_implementation.gaussian_weight_derivatives import (
     render_pixel_custom,
 )
 from splat.gaussians import Gaussians
+from splat.render_engine.gaussianScene2 import GaussianScene2
 
 
 def create_image_covariance_test_custom(
@@ -181,31 +182,36 @@ def create_image_full_custom_multiple_gaussians_with_splat_gaussians(
     all_opacity = []
     all_color = []
 
+    camera_space_means = []
+
     for gaussian_idx in range(gaussians.points.shape[0]):
         r = gaussians.quaternions[gaussian_idx : gaussian_idx + 1]
         s = gaussians.scales[gaussian_idx : gaussian_idx + 1]
 
-        camera_space_mean = mean_3d_to_camera_space.apply(
-            gaussians.homogeneous_points[gaussian_idx : gaussian_idx + 1],
-            camera.extrinsic_matrix,
-        )
+        hom_points = gaussians.homogeneous_points[gaussian_idx : gaussian_idx + 1]
+        j_w_matrix, camera_space_mean = compute_j_w_matrix(camera, hom_points, return_camera_space=True)
+        # camera_space_mean = mean_3d_to_camera_space.apply(
+        #     hom_points,
+        #     camera.extrinsic_matrix,
+        # )
+        camera_space_mean.retain_grad()
+        camera_space_means.append(camera_space_mean)
+
         pixel_space_mean = camera_space_to_pixel_space.apply(
             camera_space_mean, camera.intrinsic_matrix
         )
-        new_pixel_space_mean = pixel_space_mean[:, :3] / pixel_space_mean[
+        new_pixel_space_mean = torch.zeros_like(pixel_space_mean)
+        new_pixel_space_mean[:, :2] = pixel_space_mean[:, :2] / pixel_space_mean[
             :, 3
         ].unsqueeze(1)
-        final_pixel_space_mean = torch.cat(
-            [new_pixel_space_mean, pixel_space_mean[:, 3].unsqueeze(1)], dim=1
-        )
-        pixel_mean = ndc_to_pixels.apply(final_pixel_space_mean, [height, width])
+        new_pixel_space_mean[:, 2] = pixel_space_mean[:, 2]
+        pixel_mean = ndc_to_pixels.apply(new_pixel_space_mean, [height, width])
         final_mean_2d = torch.cat(
-            [pixel_mean[:, :2], pixel_mean[:, 3].unsqueeze(1)], dim=1
+            [pixel_mean[:, :2], pixel_mean[:, 2].unsqueeze(1)], dim=1
         )
 
         color = gaussians.colors[gaussian_idx : gaussian_idx + 1]
         opacity = gaussians.opacity[gaussian_idx : gaussian_idx + 1]
-        j_w_matrix = compute_j_w_matrix(camera, gaussians.homogeneous_points[gaussian_idx : gaussian_idx + 1])
         covariance_2d = r_s_to_cov_2d(r, s, j_w_matrix)
         all_final_means_2d.append(final_mean_2d)
         all_r_s_to_cov_2d.append(covariance_2d)

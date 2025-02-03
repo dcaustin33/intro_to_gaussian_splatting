@@ -93,7 +93,7 @@ def ndc2Pix(points: torch.Tensor, dimension: int) -> torch.Tensor:
     return (points + 1) * (dimension - 1) * 0.5
 
 
-def compute_j_w_matrix(camera: Camera, points_homogeneous: torch.Tensor):
+def compute_j_w_matrix(camera: Camera, points_homogeneous: torch.Tensor, return_camera_space: bool = False):
     """
     points_2d is a nx3 tensor where the last dimension is the depth
     We are expecting the points to already be in camera space
@@ -105,12 +105,16 @@ def compute_j_w_matrix(camera: Camera, points_homogeneous: torch.Tensor):
 
     x = torch.clamp(x, -1.3 * camera.tan_fovX, 1.3 * camera.tan_fovX) * point_camera_space[:, 2]
     y = torch.clamp(y, -1.3 * camera.tan_fovY, 1.3 * camera.tan_fovY) * point_camera_space[:, 2]
+    z = point_camera_space[:, 2]
 
-    j[:, 0, 0] = camera.focal_x / point_camera_space[:, 2]
-    j[:, 0, 2] = -(camera.focal_x * point_camera_space[:, 0]) / (point_camera_space[:, 2] ** 2)
-    j[:, 1, 1] = camera.focal_y / point_camera_space[:, 2]
-    j[:, 1, 2] = -(camera.focal_y * point_camera_space[:, 1]) / (point_camera_space[:, 2] ** 2)
+    j[:, 0, 0] = camera.focal_x / z
+    j[:, 0, 2] = -(camera.focal_x * x) / (z**2)
+    j[:, 1, 1] = camera.focal_y / z
+    j[:, 1, 2] = -(camera.focal_y * y) / (z**2)
     w = camera.extrinsic_matrix[:3, :3]
+
+    if return_camera_space:
+        return w @ j.transpose(1, 2), point_camera_space
 
     return w @ j.transpose(1, 2)
 
@@ -231,9 +235,7 @@ def create_image(camera: Camera, gaussian: Gaussian, height: int, width: int):
     )[0]
     inverted_covariance_2d = torch.linalg.inv(covariance_2d)
     image = torch.zeros((height, width, 3))
-    print("point_ndc", point_ndc)
-    print("gaussian.color", gaussian.color)
-    print("gaussian.opacity", gaussian.opacity)
+
     for i in range(height):
         for j in range(width):
             image[j, i] = render_pixel(
@@ -423,13 +425,6 @@ def create_image_full_auto_multiple_gaussians_with_splat_gaussians(
         all_r_s_to_cov_2d.append(r_s_to_cov_2d)
         all_opacity.append(opacity)
         all_color.append(color)
-
-    print("all_final_means_2d", all_final_means_2d[0].dtype)
-    print("all_opacity", all_opacity[0].dtype)
-    print("all_color", all_color[0].dtype)
-    print("inverted_covariance", all_r_s_to_cov_2d[0].dtype)
-    print("camera intrinsic matrix", camera.intrinsic_matrix.dtype)
-    print("camera extrinsic matrix", camera.extrinsic_matrix.dtype)
 
     target_pixel_x = 17
     target_pixel_y = 16

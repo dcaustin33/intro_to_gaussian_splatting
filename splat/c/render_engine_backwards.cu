@@ -57,7 +57,29 @@ namespace py = pybind11;
 
 __device__ float sigmoid(float x)
 {
-    return 1.0f / (1.0f + exp(-x));
+    return 1.0f / (1.0f + expf(-x));
+}
+
+__device__ float compute_gaussian_weight(
+    int pixel_x,
+    int pixel_y,
+    float point_x,
+    float point_y,
+    float inverse_covariance_a,
+    float inverse_covariance_b,
+    float inverse_covariance_c)
+{
+    float dx = pixel_x - point_x;
+    float dy = pixel_y - point_y;
+
+    float power = dx * inverse_covariance_a * dx +
+                  2 * dx * dy * inverse_covariance_b +
+                  dy * dy * inverse_covariance_c;
+    if (power < 0)
+    {
+        return 0.0f;
+    }
+    return -0.5f * power;
 }
 
 __device__ float compute_pixel_strength(
@@ -70,19 +92,22 @@ __device__ float compute_pixel_strength(
     float inverse_covariance_c)
 {
     // Compute the distance between the pixel and the point
-    float dx = pixel_x - point_x;
-    float dy = pixel_y - point_y;
-
-    float power = dx * inverse_covariance_a * dx +
-                  2 * dx * dy * inverse_covariance_b +
-                  dy * dy * inverse_covariance_c;
-    if (power < 0)
+    float gaussian_weight = compute_gaussian_weight(
+        pixel_x, 
+        pixel_y, 
+        point_x, 
+        point_y, 
+        inverse_covariance_a, 
+        inverse_covariance_b, 
+        inverse_covariance_c
+    );
+    if (gaussian_weight == 0)
     {
         // according to chatgpt indicates numerical
         // instability as this should never occur
         return 0.0f;
     }
-    return exp(-0.5f * power);
+    return expf(gaussian_weight);
 }
 
 __global__ void render_tile_kernel_backwards(
@@ -127,7 +152,24 @@ __global__ void render_tile_kernel_backwards(
     __shared__ float shared_inverse_covariance_2d[TILE_SIZE * TILE_SIZE * 3];
     __shared__ int shared_gaussian_idx[TILE_SIZE * TILE_SIZE];
 
-    float dl_dalpha[TILE_SIZE * TILE_SIZE];
+    // floats needed for backprop
+    float dl_dalpha = 0.0f;
+    float dl_dgaussian_strength = 0.0f;
+    float dl_dgaussian_weight = 0.0f;
+    float gaussian_weight = 0.0f;
+    float dl_ddiff_1 = 0.0f; // deriv wrt x diff
+    float dl_ddiff_2 = 0.0f; // deriv wrt y diff
+    float diff_x = 0.0f;
+    float diff_y = 0.0f;
+    float deriv_output_wrt_diff_1 = 0.0f;
+    float deriv_output_wrt_diff_2 = 0.0f;
+
+    float dl_dinv_cov_11 = 0.0f;
+    float dl_dinv_cov_12 = 0.0f;
+    float dl_dinv_cov_21 = 0.0f;
+    float dl_dinv_cov_22 = 0.0f;
+
+
 
     if (pixel_x >= image_width || pixel_y >= image_height)
     {
@@ -135,8 +177,8 @@ __global__ void render_tile_kernel_backwards(
         done = true;
     }
 
-    int target_pixel_x = 17;
-    int target_pixel_y = 16;
+    int target_pixel_x = 3;
+    int target_pixel_y = 15;
     int target_tile_x = target_pixel_x / TILE_SIZE;
     int target_tile_y = target_pixel_y / TILE_SIZE;
 
@@ -276,30 +318,79 @@ __global__ void render_tile_kernel_backwards(
                     // TODO: this is where the backwards pass will happen as we know it has contributed
                     int gaussian_idx = shared_gaussian_idx[i];
 
-#ifdef PRINT_DEBUG
-                    if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
-                    {
-                        printf("gaussian_idx: %d\n", gaussian_idx);
-                        printf("dl_dcolors: %f, %f, %f\n", dl_dcolors[gaussian_idx * 3], dl_dcolors[gaussian_idx * 3 + 1], dl_dcolors[gaussian_idx * 3 + 2]);
-                        printf("dl_dpixel: %f, %f, %f\n", dl_dpixel[pixel_idx + 0], dl_dpixel[pixel_idx + 1], dl_dpixel[pixel_idx + 2]);
-                        printf("alpha_value: %f, current_T: %f\n", alpha_value, current_T);
-                    }
-#endif
-
+                    dl_dalpha = 0.0f;
+                    dl_dgaussian_strength = 0.0f;
+                    dl_dgaussian_weight = 0.0f;
                     if (pixel_idx + 2 < image_width * image_height * 3){
                         atomicAdd(&dl_dcolors[gaussian_idx * 3], dl_dpixel[pixel_idx + 0] * alpha_value * current_T);
                         atomicAdd(&dl_dcolors[gaussian_idx * 3 + 1], dl_dpixel[pixel_idx + 1] * alpha_value * current_T);
                         atomicAdd(&dl_dcolors[gaussian_idx * 3 + 2], dl_dpixel[pixel_idx + 2] * alpha_value * current_T);
-                    }
 
-                    // // derivate to be used for alpha - this likely does not need to be shared memory
-                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 0] * shared_point_colors[i * 3] * total_weight);
-                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 1] * shared_point_colors[i * 3 + 1] * total_weight);
-                    // atomicAdd(&dl_dalpha[gaussian_idx], dl_dpixel[pixel_x * 3 + 2] * shared_point_colors[i * 3 + 2] * total_weight);
+                        // // derivate to be used for alpha - this likely does not need to be shared memory
+                        dl_dalpha += dl_dpixel[pixel_idx + 0] * shared_point_colors[i * 3] * current_T;
+                        dl_dalpha += dl_dpixel[pixel_idx + 1] * shared_point_colors[i * 3 + 1] * current_T;
+                        dl_dalpha += dl_dpixel[pixel_idx + 2] * shared_point_colors[i * 3 + 2] * current_T;
+                        // derivative wrt unactivated opacity
+                        float derivative_sigmoid = sigmoid(shared_point_opacities[i]) * (1 - sigmoid(shared_point_opacities[i]));
+                        atomicAdd(&dl_dopacities[gaussian_idx], dl_dalpha * derivative_sigmoid * gaussian_strength);
+                        // // derivative wrt gaussian strength
+                        dl_dgaussian_strength += dl_dalpha * sigmoid(shared_point_opacities[i]);
+                        // derivative of the exponential func that is applied to the gaussian weight
+                        gaussian_weight = compute_gaussian_weight(
+                            pixel_x, 
+                            pixel_y, 
+                            shared_point_means[i * 2], 
+                            shared_point_means[i * 2 + 1], 
+                            shared_inverse_covariance_2d[i * 3], 
+                            shared_inverse_covariance_2d[i * 3 + 1], 
+                            shared_inverse_covariance_2d[i * 3 + 2]
+                        );
+                        dl_dgaussian_weight += dl_dgaussian_strength * expf(gaussian_weight);
+
+                        diff_x = pixel_x - shared_point_means[i * 2];
+                        diff_y = pixel_y - shared_point_means[i * 2 + 1];
+                        dl_ddiff_1 = (shared_inverse_covariance_2d[i * 3] * diff_x + shared_inverse_covariance_2d[i * 3 + 1] * diff_y);
+                        dl_ddiff_2 = (shared_inverse_covariance_2d[i * 3 + 1] * diff_x + shared_inverse_covariance_2d[i * 3 + 2] * diff_y);
+                        deriv_output_wrt_diff_1 = -0.5 * dl_dgaussian_weight * 2 * dl_ddiff_1;
+                        deriv_output_wrt_diff_2 = -0.5 * dl_dgaussian_weight * 2 * dl_ddiff_2;
+                        
+                        atomicAdd(&dl_dmeans[gaussian_idx * 3], -1 * deriv_output_wrt_diff_1);
+                        atomicAdd(&dl_dmeans[gaussian_idx * 3 + 1], -1 * deriv_output_wrt_diff_2);
+
+                        dl_dinv_cov_11 = -0.5 * diff_x * diff_x;
+                        dl_dinv_cov_12 = -0.5 * diff_x * diff_y;
+                        dl_dinv_cov_21 = -0.5 * diff_y * diff_x;
+                        dl_dinv_cov_22 = -0.5 * diff_y * diff_y;
+
+                        atomicAdd(&dl_dinverted_covariance_2d[gaussian_idx * 4], dl_dgaussian_weight * dl_dinv_cov_11);
+                        atomicAdd(&dl_dinverted_covariance_2d[gaussian_idx * 4 + 1], dl_dgaussian_weight * dl_dinv_cov_12);
+                        atomicAdd(&dl_dinverted_covariance_2d[gaussian_idx * 4 + 2], dl_dgaussian_weight * dl_dinv_cov_21);
+                        atomicAdd(&dl_dinverted_covariance_2d[gaussian_idx * 4 + 3], dl_dgaussian_weight * dl_dinv_cov_22);
+                        
+#ifdef PRINT_DEBUG
+                        if (target_pixel_x == pixel_x && target_pixel_y == pixel_y)
+                        {
+                            printf("gaussian_idx: %d\n", gaussian_idx);
+                            // printf("dl_dcolors: %f, %f, %f\n", dl_dcolors[gaussian_idx * 3], dl_dcolors[gaussian_idx * 3 + 1], dl_dcolors[gaussian_idx * 3 + 2]);
+                            // printf("dl_dpixel: %f, %f, %f\n", dl_dpixel[pixel_idx + 0], dl_dpixel[pixel_idx + 1], dl_dpixel[pixel_idx + 2]);
+                            // printf("alpha_value: %f, current_T: %f\n", alpha_value, current_T);
+                            // printf("dl_dalpha: %f\n", dl_dalpha);
+                            // printf("dl_dopacities: %f\n", dl_dopacities[gaussian_idx]);
+                            // printf("dl_dgaussian_strength: %f\n", dl_dgaussian_strength);
+                            printf("dl_dgaussian_weight: %f\n", dl_dgaussian_weight);
+                            // printf("dl_ddiff_1: %f, dl_ddiff_2: %f\n", dl_ddiff_1, dl_ddiff_2); 
+                            // printf("dl_dmeans: %.10f, %.10f\n", dl_dmeans[gaussian_idx * 3], dl_dmeans[gaussian_idx * 3 + 1]);
+                            // printf("deriv_output_wrt_diff_1: %f, deriv_output_wrt_diff_2: %f\n", deriv_output_wrt_diff_1, deriv_output_wrt_diff_2);
+                            // printf("inv_cov: %.10f, %.10f, %.10f\n", shared_inverse_covariance_2d[i * 3], shared_inverse_covariance_2d[i * 3 + 1], shared_inverse_covariance_2d[i * 3 + 2]);
+                            // printf("diff: %.10f, %.10f\n", diff_x, diff_y);
+                            printf("dl_dinv_cov_11: %.10f, dl_dinv_cov_12: %.10f, dl_dinv_cov_21: %.10f, dl_dinv_cov_22: %.10f\n", dl_dinv_cov_11, dl_dinv_cov_12, dl_dinv_cov_21, dl_dinv_cov_22);
+                            printf("inv covariance: %.10f, %.10f, %.10f\n", shared_inverse_covariance_2d[i * 3], shared_inverse_covariance_2d[i * 3 + 1], shared_inverse_covariance_2d[i * 3 + 2]);
+                            printf("dl_dinverted_covariance_2d: %.10f, %.10f, %.10f, %.10f\n", dl_dinverted_covariance_2d[gaussian_idx * 4], dl_dinverted_covariance_2d[gaussian_idx * 4 + 1], dl_dinverted_covariance_2d[gaussian_idx * 4 + 2], dl_dinverted_covariance_2d[gaussian_idx * 4 + 3]);
+                        }
+
+#endif
+                    }
                 
-                    // // derivative wrt unactivated opacity
-                    // float derivative_sigmoid = sigmoid(shared_point_opacities[i]) * (1 - sigmoid(shared_point_opacities[i]));
-                    // atomicAdd(&dl_dopacities[gaussian_idx], dl_dalpha[gaussian_idx] * derivative_sigmoid * gaussian_strength);
                 
                 }
             }
@@ -374,8 +465,6 @@ torch::Tensor render_tile_cuda_backwards(
     int grid_size_x = (image_width + tile_size - 1) / tile_size;
     int grid_size_y = (image_height + tile_size - 1) / tile_size;
     dim3 grid_size(grid_size_x, grid_size_y);
-
-    torch::Tensor image_new = torch::ones({image_height, image_width, 3}, image.options());
 
     // print the amount of elements in image tensor
     render_tile_kernel_backwards<<<grid_size, block_size>>>(

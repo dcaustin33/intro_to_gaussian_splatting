@@ -27,8 +27,8 @@ class GaussianScene2(nn.Module):
         self.gaussians = gaussians
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    @staticmethod
     def compute_2d_covariance(
-        self,
         points_homogeneous: torch.Tensor,
         covariance_3d: torch.Tensor,
         extrinsic_matrix: torch.Tensor,
@@ -46,7 +46,7 @@ class GaussianScene2(nn.Module):
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
         z = points_camera_space[:, 2]
-        j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(self.device)
+        j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(points_camera_space.device)
         j[:, 0, 0] = focal_x / z
         j[:, 0, 2] = -(focal_x * x) / (z**2)
         j[:, 1, 1] = focal_y / z
@@ -57,6 +57,7 @@ class GaussianScene2(nn.Module):
         # overall formula for a normal extrinsic matrix is
         w = extrinsic_matrix[:3, :3]
         t = w @ j.transpose(1, 2)
+
         covariance2d = (
             t.transpose(1, 2)
             @ covariance_3d.transpose(1, 2)  # doesnt this not do anything?
@@ -171,13 +172,7 @@ class GaussianScene2(nn.Module):
         tan_fovX = math.tan(fovX / 2)
         tan_fovY = math.tan(fovY / 2)
 
-        points_homogeneous = torch.cat(
-            [
-                self.gaussians.points.to(self.device),
-                torch.ones(self.gaussians.points.shape[0], 1).to(self.device),
-            ],
-            dim=1,
-        )  # Nx4
+        points_homogeneous = self.gaussians.homogeneous_points
         if use_cuda:
             covariance3d = preprocessing.get_3d_covariance_matrix_cuda(
                 self.gaussians.quaternions, self.gaussians.scales
@@ -205,9 +200,11 @@ class GaussianScene2(nn.Module):
                 focal_y,
             )
 
+
         covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
+        points_ndc.retain_grad()
         non_in_place_points_ndc = torch.zeros_like(points_ndc)
         non_in_place_points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
         non_in_place_points_ndc[:, 2] = points_ndc[:, 2]

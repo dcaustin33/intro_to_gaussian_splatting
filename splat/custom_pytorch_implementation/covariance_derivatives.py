@@ -114,7 +114,7 @@ class covariance_3d_to_covariance_2d(torch.autograd.Function):
         To get the covariance 2d we do U.T @ covariance_3d @ U
         """
         ctx.save_for_backward(U, covariance_3d)
-        outcome = torch.bmm(U.transpose(1, 2), torch.bmm(covariance_3d, U))
+        outcome = torch.bmm(torch.bmm(U.transpose(1, 2), covariance_3d.transpose(1, 2)), U)
         outcome[:, 0, 0] = outcome[:, 0, 0] + 0.3
         outcome[:, 1, 1] = outcome[:, 1, 1] + 0.3
         return outcome

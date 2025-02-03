@@ -51,7 +51,7 @@ class Gaussians(nn.Module):
 
     @property
     def homogeneous_points(self) -> torch.Tensor:
-        return torch.cat([self.points, torch.ones(self.points.shape[0], 1).to(self.device)], dim=1)
+        return torch.cat([self.points, torch.ones(self.points.shape[0], 1, requires_grad=False).to(self.device)], dim=1)
 
     def initialize_scale(
         self,

@@ -19,13 +19,14 @@ class final_color(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor, grad_test_t: torch.Tensor):
         """Output of forward is a nx3 tensor so the grad_output is a nx3 tensor"""
         color, current_T, alpha = ctx.saved_tensors
-        # if grad_output.sum() != 0:
-        #     print("grad_output in custom:", grad_output)
-        #     print("alpha:", alpha, "current_T:", current_T)
         if alpha < 1.0 / 255.0:
             return torch.zeros_like(color), None, torch.zeros_like(alpha)
         grad_color = grad_output * current_T * alpha
         grad_alpha = (grad_output * color * current_T).sum(dim=1, keepdim=True)
+        # if grad_output.sum() != 0:
+        #     print("grad_output in custom:", grad_output)
+        #     print("alpha:", alpha, "current_T:", current_T)
+        #     print("grad_alpha:", grad_alpha)
         return grad_color, None, grad_alpha
     
 class get_alpha(torch.autograd.Function):
@@ -43,6 +44,9 @@ class get_alpha(torch.autograd.Function):
         derivative_sigmoid = torch.sigmoid(unactivated_opacity) * (1 - torch.sigmoid(unactivated_opacity))
         grad_gaussian_strength = grad_output * torch.sigmoid(unactivated_opacity)
         grad_unactivated_opacity = grad_output * gaussian_strength * derivative_sigmoid
+        # if grad_output.sum() != 0:
+        #     print("grad_output:", grad_output)
+        #     print("grad_gaussian_strength:", grad_gaussian_strength.item())
         return grad_gaussian_strength, grad_unactivated_opacity
 
 
@@ -56,6 +60,8 @@ class gaussian_exp(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor):
         gaussian_weight = ctx.saved_tensors[0]
         grad_gaussian_weight = grad_output * torch.exp(gaussian_weight)
+        # if grad_output.sum() != 0:
+        #     print("grad_gaussian_weight:", grad_gaussian_weight.item())
         return grad_gaussian_weight
     
 class gaussian_weight(torch.autograd.Function):
@@ -82,8 +88,21 @@ class gaussian_weight(torch.autograd.Function):
 
         deriv_output_wrt_diff1 = torch.einsum("bij,bjk->bik", inverted_covariance, diff.transpose(1, 2))
         deriv_output_wrt_diff2 = torch.einsum("bij,bjk->bik", inverted_covariance.transpose(1, 2), diff.transpose(1, 2))
+
         deriv_output_wrt_diff = -0.5 * torch.einsum("bi,bji->bj", grad_output, deriv_output_wrt_diff1 + deriv_output_wrt_diff2)
         grad_gaussian_mean = deriv_output_wrt_diff * -1
+        # if grad_output.sum() != 0:
+        #     print("inverted_covariance:", inverted_covariance)
+        #     print("deriv_wrt_inv_cov:", deriv_wrt_inv_cov)
+        #     print("grad_inv_cov:", grad_inv_cov)
+        #     print("\n\n")
+        #     print("diff:", diff)
+        #     print("deriv_output_wrt_diff1:", deriv_output_wrt_diff1)
+        #     print("deriv_output_wrt_diff2:", deriv_output_wrt_diff2)
+        #     print("deriv_output_wrt_diff:", deriv_output_wrt_diff)
+        #     print("grad_output:", grad_output)
+        #     print("grad_gaussian_mean:", grad_gaussian_mean[0, 0].item(), grad_gaussian_mean[0, 1].item())
+
         return grad_gaussian_mean, grad_inv_cov, None
     
 def render_pixel_custom(

@@ -118,7 +118,7 @@ class autograd_render_tile_cuda(torch.autograd.Function):
             opacity_grad.contiguous(),
             inverted_covariance_2d_grad.contiguous(),
         )
-
+        
         return (
             None,
             gaussian_mean_3d_grad,
