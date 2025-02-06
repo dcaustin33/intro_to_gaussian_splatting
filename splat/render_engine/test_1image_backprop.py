@@ -59,7 +59,6 @@ def get_image(path_to_images, image_name, height, width):
 
 
 def save_image(image, path):
-    # import pdb; pdb.set_trace()
     image = image.cpu().numpy()
     image = (image * 255).astype(np.uint8)
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)

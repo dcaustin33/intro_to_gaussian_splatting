@@ -1,43 +1,23 @@
-[tool.poetry]
+[project]
 name = "splat"
 version = "0.1.0"
-description = "Personal repo for splatting"
-authors = ["dcaustin33 <dcaustin33@gmail.com>"]
+description = ""
+authors = [
+    {name = "Derek",email = "dcaustin33@gmail.com"}
+]
 readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy (<2.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "pillow (>=11.1.0,<12.0.0)",
+    "pycolmap (>=3.11.1,<4.0.0)",
+    "opencv-python (>=4.11.0.86,<5.0.0.0)",
+    "plyfile (>=1.1,<2.0)",
+    "pydantic (>=2.10.6,<3.0.0)"
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-numpy = "^1.26.4"
-pycolmap = "^0.6.1"
-pydantic = "^2.7.1"
-matplotlib = "^3.8.4"
-einops = "^0.8.0"
-tqdm = "^4.66.4"
-plyfile = "^1.0.3"
-scikit-learn = "^1.4.2"
-pyyaml = "^6.0.1"
-wurlitzer = "^3.1.0"
-ninja = "^1.11.1.1"
-pybind11 = "^2.13.6"
-ipykernel = "^6.29.5"
-
-[[tool.poetry.source]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu113"
-default = false
-
-
-[tool.poetry.group.dev.dependencies]
-isort = "^5.13.2"
-black = "^24.4.2"
-ipykernel = "^6.29.4"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.isort]
-profile = "black"
-
-[tool.black]
-line-length = 88
