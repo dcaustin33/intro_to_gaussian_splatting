@@ -1,4 +1,5 @@
 *.venv
+*.venv2
 # the folder titled original_gaussian_splat
 */original_gaussian_splat
 point_clouds
@@ -20,3 +21,5 @@ build/
 *build*
 *.cpython*
 /output_images
+
+*.pth

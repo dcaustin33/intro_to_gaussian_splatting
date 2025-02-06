@@ -70,21 +70,19 @@ def convert_sh_to_rgb(sh_dc: torch.Tensor) -> torch.Tensor:
     return torch.clamp(sh_dv, 0, 1)
 
 
-def convert_to_gaussian_schema(vertices: List[Dict[str, float]]) -> Gaussians:
+def convert_to_gaussian_schema(vertices: List[Dict[str, float]], requires_grad: bool = False) -> Gaussians:
     gaussian_means = [[v['x'], v['y'], v['z']] for v in vertices]
     gaussian_dc_sh = [[v['f_dc_0'], v['f_dc_1'], v['f_dc_2']] for v in vertices]
     opacity = [v['opacity'] for v in vertices]
     scale = [[v['scale_0'], v['scale_1'], v['scale_2']] for v in vertices]
     rotation = [[v['rot_0'], v['rot_1'], v['rot_2'], v['rot_3']] for v in vertices]
-    print(gaussian_dc_sh[0])
-    colors = convert_sh_to_rgb(torch.tensor(gaussian_dc_sh))
-    print(colors[0])
     gaussians = Gaussians(
         points=torch.tensor(gaussian_means),
         colors=convert_sh_to_rgb(torch.tensor(gaussian_dc_sh)),
         scales=torch.tensor(scale),
         quaternions=torch.tensor(rotation),
         opacity=torch.tensor(opacity),
+        requires_grad=requires_grad
     )
     return gaussians
 

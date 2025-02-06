@@ -1,6 +1,6 @@
 import math
 import time
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -27,6 +27,14 @@ class GaussianScene2(nn.Module):
         self.gaussians = gaussians
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    def get_params(self) -> List[torch.Tensor]:
+        return [
+            self.gaussians.quaternions,
+            self.gaussians.scales,
+            self.gaussians.colors,
+            self.gaussians.opacity,
+        ]
+
     @staticmethod
     def compute_2d_covariance(
         points_homogeneous: torch.Tensor,
@@ -46,7 +54,9 @@ class GaussianScene2(nn.Module):
         x = torch.clamp(x, -1.3 * tan_fovX, 1.3 * tan_fovX) * points_camera_space[:, 2]
         y = torch.clamp(y, -1.3 * tan_fovY, 1.3 * tan_fovY) * points_camera_space[:, 2]
         z = points_camera_space[:, 2]
-        j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(points_camera_space.device)
+        j = torch.zeros((points_camera_space.shape[0], 3, 3)).to(
+            points_camera_space.device
+        )
         j[:, 0, 0] = focal_x / z
         j[:, 0, 2] = -(focal_x * x) / (z**2)
         j[:, 1, 1] = focal_y / z
@@ -200,19 +210,16 @@ class GaussianScene2(nn.Module):
                 focal_y,
             )
 
-
         covariance2d = covariance2d.view(-1, 2, 2)
         # Nx4 - using the openGL convention
         points_ndc = points_camera_space @ intrinsic_matrix.to(self.device)
         points_ndc.retain_grad()
         non_in_place_points_ndc = torch.zeros_like(points_ndc)
-        non_in_place_points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
+        non_in_place_points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(
+            1
+        )
         non_in_place_points_ndc[:, 2] = points_ndc[:, 2]
-        # points_ndc[:, :2] = points_ndc[:, :2] / points_ndc[:, 3].unsqueeze(1)
-        # points_ndc = points_ndc[:, :3]  # nx3
         points_in_view_bool_array = self.filter_in_view(non_in_place_points_ndc)
-        # print("WARNING: Not filtering in view")
-        # points_in_view_bool_array = torch.ones(points_ndc.shape[0], device=self.device).bool()
         final_points_ndc = non_in_place_points_ndc[points_in_view_bool_array]
         covariance2d = covariance2d[points_in_view_bool_array]
         color = self.gaussians.colors[points_in_view_bool_array].to(self.device)  # nx3
@@ -221,9 +228,20 @@ class GaussianScene2(nn.Module):
         inverted_covariance_2d = invert_covariance_2d(covariance2d)
         radius = compute_radius_from_covariance_2d(covariance2d)
 
-        points_pixel_coords_x = ndc2Pix(final_points_ndc[:, 0], dimension=width).view(-1, 1)
-        points_pixel_coords_y = ndc2Pix(final_points_ndc[:, 1], dimension=height).view(-1, 1)
-        final_mean = torch.cat([points_pixel_coords_x, points_pixel_coords_y, final_points_ndc[:, 2].view(-1, 1)], dim=1)
+        points_pixel_coords_x = ndc2Pix(final_points_ndc[:, 0], dimension=width).view(
+            -1, 1
+        )
+        points_pixel_coords_y = ndc2Pix(final_points_ndc[:, 1], dimension=height).view(
+            -1, 1
+        )
+        final_mean = torch.cat(
+            [
+                points_pixel_coords_x,
+                points_pixel_coords_y,
+                final_points_ndc[:, 2].view(-1, 1),
+            ],
+            dim=1,
+        )
         tiles_touched, top_left, bottom_right = self.compute_tiles_touched(
             final_mean[:, 0:2], radius, tile_size, height, width
         )
@@ -523,4 +541,5 @@ class GaussianScene2(nn.Module):
             len(preprocessed_gaussians.tiles_touched),
             array.shape[0],
         )
+        image = image.clamp(0, 1)
         return image

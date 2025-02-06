@@ -18,18 +18,18 @@ class Gaussians(nn.Module):
         requires_grad: bool = False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.points = points.requires_grad_(requires_grad).to(self.device).float()
+        self.points = points.to(self.device).float().requires_grad_(requires_grad)
         if colors.max() > 1:
             divisor = 256
         else:
             divisor = 1
         self.colors = (
-            (colors / divisor).clone().requires_grad_(requires_grad).to(self.device).float()
+            (colors / divisor).to(self.device).float().requires_grad_(requires_grad)
         )
         if scales is None:
             self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.02
         else:
-            self.scales = scales.clone().requires_grad_(requires_grad).to(self.device).float()
+            self.scales = scales.to(self.device).float().requires_grad_(requires_grad)
 
         # for now we do not use initialize scale
         # however from the paper the scale is initialized using
@@ -40,14 +40,14 @@ class Gaussians(nn.Module):
             self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
             self.quaternions[:, 0] = 1.0
         else:
-            self.quaternions = quaternions.clone().requires_grad_(requires_grad).to(self.device)
+            self.quaternions = quaternions.to(self.device).requires_grad_(requires_grad)
 
         if opacity is None:
             self.opacity = inverse_sigmoid(
                 0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
             ).to(self.device)
         else:
-            self.opacity = opacity.clone().requires_grad_(requires_grad).to(self.device)
+            self.opacity = opacity.to(self.device).requires_grad_(requires_grad)
 
     @property
     def homogeneous_points(self) -> torch.Tensor:
@@ -91,6 +91,24 @@ class Gaussians(nn.Module):
         return covariance
     
     def get_scaling_matrix(self) -> torch.Tensor:
-        print("WARNING: not using scale activation")
-        # return torch.exp(self.scales)
-        return self.scales
+        # print("WARNING: not using scale activation")
+        # return self.scales
+        return torch.exp(self.scales)
+    
+
+    def save_params(self):
+        torch.save({
+            'points': self.points,
+            'quaternions': self.quaternions, 
+            'scales': self.scales,
+            'colors': self.colors,
+            'opacity': self.opacity
+        }, 'gaussian_params.pth')
+    
+    def load_params(self):
+        params = torch.load('gaussian_params.pth')
+        self.points = params['points']
+        self.quaternions = params['quaternions']
+        self.scales = params['scales']
+        self.colors = params['colors']
+        self.opacity = params['opacity']
