@@ -1,9 +1,10 @@
-import os
+from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
-from splat.utils import build_rotation, inverse_sigmoid, storePly
+from splat.utils import build_rotation, inverse_sigmoid
 
 
 class Gaussians(nn.Module):
@@ -11,26 +12,46 @@ class Gaussians(nn.Module):
         self,
         points: torch.Tensor,
         colors: torch.Tensor,
-        model_path: str = ".",
+        scales: Optional[torch.Tensor] = None,
+        quaternions: Optional[torch.Tensor] = None,
+        opacity: Optional[torch.Tensor] = None,
+        requires_grad: bool = False,
     ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.point_cloud_path = os.path.join(model_path, "point_cloud.ply")
-        storePly(self.point_cloud_path, points, colors)
-        self.points = points.clone().requires_grad_(True).to(self.device).float()
+        self.points = points.to(self.device).float().requires_grad_(requires_grad)
+        if colors.max() > 1:
+            divisor = 256
+        else:
+            divisor = 1
         self.colors = (
-            (colors / 256).clone().requires_grad_(True).to(self.device).float()
+            (colors / divisor).to(self.device).float().requires_grad_(requires_grad)
         )
-        self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.001
+        if scales is None:
+            self.scales = torch.ones((len(self.points), 3)).to(self.device).float() * 0.02
+        else:
+            self.scales = scales.to(self.device).float().requires_grad_(requires_grad)
+
         # for now we do not use initialize scale
         # however from the paper the scale is initialized using
         # mean of the three smallest nonzero distances for each point
         # self.initialize_scale()
+        
+        if quaternions is None:
+            self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
+            self.quaternions[:, 0] = 1.0
+        else:
+            self.quaternions = quaternions.to(self.device).requires_grad_(requires_grad)
 
-        self.quaternions = torch.zeros((len(self.points), 4)).to(self.device)
-        self.quaternions[:, 0] = 1.0
-        self.opacity = inverse_sigmoid(
-            0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
-        ).to(self.device)
+        if opacity is None:
+            self.opacity = inverse_sigmoid(
+                0.9999 * torch.ones((self.points.shape[0], 1), dtype=torch.float)
+            ).to(self.device)
+        else:
+            self.opacity = opacity.to(self.device).requires_grad_(requires_grad)
+
+    @property
+    def homogeneous_points(self) -> torch.Tensor:
+        return torch.cat([self.points, torch.ones(self.points.shape[0], 1, requires_grad=False).to(self.device)], dim=1)
 
     def initialize_scale(
         self,
@@ -61,9 +82,33 @@ class Gaussians(nn.Module):
         rotation_matrices = build_rotation(quaternions)
         # nx3x3 matrix
         scale_matrices = torch.zeros((len(self.points), 3, 3)).to(self.device)
-        scale_matrices[:, 0, 0] = self.scales[:, 0]
-        scale_matrices[:, 1, 1] = self.scales[:, 1]
-        scale_matrices[:, 2, 2] = self.scales[:, 2]
-        scale_rotation_matrix = rotation_matrices @ scale_matrices
-        covariance = scale_rotation_matrix @ scale_rotation_matrix.transpose(1, 2)
+        scale = self.get_scaling_matrix()
+        scale_matrices[:, 0, 0] = scale[:, 0]
+        scale_matrices[:, 1, 1] = scale[:, 1]
+        scale_matrices[:, 2, 2] = scale[:, 2]
+        m = rotation_matrices @ scale_matrices
+        covariance = m @ m.transpose(1, 2)
         return covariance
+    
+    def get_scaling_matrix(self) -> torch.Tensor:
+        # print("WARNING: not using scale activation")
+        # return self.scales
+        return torch.exp(self.scales)
+    
+
+    def save_params(self):
+        torch.save({
+            'points': self.points,
+            'quaternions': self.quaternions, 
+            'scales': self.scales,
+            'colors': self.colors,
+            'opacity': self.opacity
+        }, 'gaussian_params.pth')
+    
+    def load_params(self):
+        params = torch.load('gaussian_params.pth')
+        self.points = params['points']
+        self.quaternions = params['quaternions']
+        self.scales = params['scales']
+        self.colors = params['colors']
+        self.opacity = params['opacity']

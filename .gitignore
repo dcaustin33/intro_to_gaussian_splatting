@@ -1,12 +1,25 @@
 *.venv
+*.venv2
 # the folder titled original_gaussian_splat
 */original_gaussian_splat
 point_clouds
 360_extra_scenes
 360_extra_scenes.zip
 *.python-version
-*/__pycache__
+**/__pycache__
 *.ply
 *.zip
 flowers
 treehill
+bicycle
+models
+.vscode
+/data
+/colmap_data
+
+build/
+*build*
+*.cpython*
+/output_images
+
+*.pth

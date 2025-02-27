@@ -76,7 +76,7 @@ def project_points(
 
 
 def extract_gaussian_weight(
-    pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor
+    pixel: torch.Tensor, mean: torch.Tensor, covariance: torch.Tensor, pdb: bool = False
 ) -> torch.Tensor:
     """
     Use the covariance matrix to extract the weight of the point
@@ -129,12 +129,14 @@ def inverse_sigmoid(x: torch.Tensor) -> torch.Tensor:
     return torch.log(x / (1 - x))
 
 
-def build_rotation(r: torch.Tensor) -> torch.Tensor:
-    norm = torch.sqrt(
-        r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
-    )
-
-    q = r / norm[:, None]
+def build_rotation(r: torch.Tensor, normalize: bool = True) -> torch.Tensor:
+    if normalize:
+        norm = torch.sqrt(
+            r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
+        )
+        q = r / norm[:, None]
+    else:
+        q = r
 
     R = torch.zeros((q.size(0), 3, 3), device=r.device, dtype=r.dtype)
 
@@ -225,13 +227,14 @@ def getProjectionMatrix(
     return P
 
 
-def getIntinsicMatrix(
+def getIntrinsicMatrix(
     focal_x: torch.Tensor,
     focal_y: torch.Tensor,
     height: torch.Tensor,
     width: torch.Tensor,
-    znear: torch.Tensor = torch.Tensor([100.0]),
-    zfar: torch.Tensor = torch.Tensor([0.001]),
+    zfar: torch.Tensor = torch.Tensor([100.0]),
+    znear: torch.Tensor = torch.Tensor([0.001]),
+    z_sign: float = 1.0,
 ) -> torch.Tensor:
     """
     Gets the internal perspective projection matrix
@@ -240,6 +243,7 @@ def getIntinsicMatrix(
     zfar: far plane set by user
     fovX: field of view in x, calculated from the focal length
     fovY: field of view in y, calculated from the focal length
+    z_sign: sign of the z component we want positive to be visible
     """
     fovX = torch.Tensor([2 * math.atan(width / (2 * focal_x))])
     fovY = torch.Tensor([2 * math.atan(height / (2 * focal_y))])
@@ -254,15 +258,14 @@ def getIntinsicMatrix(
 
     P = torch.zeros(4, 4)
 
-    z_sign = 1.0
-
     P[0, 0] = 2.0 * znear / (right - left)
     P[1, 1] = 2.0 * znear / (top - bottom)
     P[0, 2] = (right + left) / (right - left)
     P[1, 2] = (top + bottom) / (top - bottom)
     P[3, 2] = z_sign
+    # not doing zfar + znear as znear is miniscule
     P[2, 2] = z_sign * zfar / (zfar - znear)
-    P[2, 3] = -(zfar * znear) / (zfar - znear)
+    P[2, 3] = -2*(zfar * znear) / (zfar - znear)
     return P
 
 

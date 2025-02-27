@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -25,19 +25,20 @@ from splat.utils import (
 class GaussianScene(nn.Module):
     def __init__(
         self,
-        colmap_path: str,
         gaussians: Gaussians,
+        colmap_path: Optional[str] = None,
     ) -> None:
         super().__init__()
 
-        camera_dict = read_camera_file(colmap_path)
-        image_dict = read_image_file(colmap_path)
-        self.images = {}
-        for idx in image_dict.keys():
-            image = image_dict[idx]
-            camera = camera_dict[image.camera_id]
-            image = GaussianImage(camera=camera, image=image)
-            self.images[idx] = image
+        if colmap_path is not None:
+            camera_dict = read_camera_file(colmap_path)
+            image_dict = read_image_file(colmap_path)
+            self.images = {}
+            for idx in image_dict.keys():
+                image = image_dict[idx]
+                camera = camera_dict[image.camera_id]
+                image = GaussianImage(camera=camera, image=image)
+                self.images[idx] = image
 
         self.gaussians = gaussians
 
@@ -51,27 +52,94 @@ class GaussianScene(nn.Module):
         )
 
     def get_2d_covariance(
-        self, image_idx: int, points: torch.Tensor, covariance_3d: torch.Tensor
+        self, 
+        points: torch.Tensor, 
+        covariance_3d: torch.Tensor,
+        image_idx: Optional[int] = None,
+        world2view: Optional[torch.Tensor] = None,
+        tan_fovX: Optional[torch.Tensor] = None,
+        tan_fovY: Optional[torch.Tensor] = None,
+        focal_x: Optional[torch.Tensor] = None,
+        focal_y: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Get the 2D covariance matrix for each gaussian
         """
+        if image_idx is None:
+            assert world2view is not None
+            assert tan_fovX is not None
+            assert tan_fovY is not None
+            assert focal_x is not None
+            assert focal_y is not None
+            world2view = world2view.to(points.device)
+            tan_fovX = tan_fovX.to(points.device)
+            tan_fovY = tan_fovY.to(points.device)
+            focal_x = focal_x.to(points.device)
+            focal_y = focal_y.to(points.device)
+        else:
+            world2view = self.images[image_idx].world2view.to(points.device)
+            tan_fovX = self.images[image_idx].tan_fovX.to(points.device)
+            tan_fovY = self.images[image_idx].tan_fovY.to(points.device)
+            focal_x = self.images[image_idx].f_x.to(points.device)
+            focal_y = self.images[image_idx].f_y.to(points.device)
+        
         output = compute_2d_covariance(
             points=points,
-            extrinsic_matrix=self.images[image_idx].world2view.to(points.device),
+            extrinsic_matrix=world2view,
             covariance_3d=covariance_3d,
-            tan_fovX=self.images[image_idx].tan_fovX.to(points.device),
-            tan_fovY=self.images[image_idx].tan_fovY.to(points.device),
-            focal_x=self.images[image_idx].f_x.to(points.device),
-            focal_y=self.images[image_idx].f_y.to(points.device),
+            tan_fovX=tan_fovX,
+            tan_fovY=tan_fovY,
+            focal_x=focal_x,
+            focal_y=focal_y,
         )
         return output
 
-    def preprocess(self, image_idx: int) -> None:
+    def preprocess(
+        self, 
+        image_idx: Optional[int] = None,
+        world2view: Optional[torch.Tensor] = None,
+        tan_fovX: Optional[torch.Tensor] = None,
+        tan_fovY: Optional[torch.Tensor] = None,
+        focal_x: Optional[torch.Tensor] = None,
+        focal_y: Optional[torch.Tensor] = None,
+        full_proj_transform: Optional[torch.Tensor] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+    ) -> None:
         """Preprocesses before rendering begins"""
+        
+        if image_idx is None:
+            assert world2view is not None
+            assert tan_fovX is not None
+            assert tan_fovY is not None
+            assert focal_x is not None
+            assert focal_y is not None
+            assert height is not None
+            assert width is not None
+            world2view = world2view.to(self.gaussians.points.device)
+            tan_fovX = tan_fovX.to(self.gaussians.points.device)
+            tan_fovY = tan_fovY.to(self.gaussians.points.device)
+            focal_x = focal_x.to(self.gaussians.points.device)
+            focal_y = focal_y.to(self.gaussians.points.device)
+            full_proj_transform = full_proj_transform.to(self.gaussians.points.device)
+            height = height.to(self.gaussians.points.device)
+            width = width.to(self.gaussians.points.device)
+        else:
+            world2view = self.images[image_idx].world2view.to(self.gaussians.points.device)
+            tan_fovX = self.images[image_idx].tan_fovX.to(self.gaussians.points.device)
+            tan_fovY = self.images[image_idx].tan_fovY.to(self.gaussians.points.device)
+            focal_x = self.images[image_idx].f_x.to(self.gaussians.points.device)
+            focal_y = self.images[image_idx].f_y.to(self.gaussians.points.device)
+            full_proj_transform = self.images[image_idx].full_proj_transform.to(self.gaussians.points.device)
+            height = self.images[image_idx].height.to(self.gaussians.points.device)
+            width = self.images[image_idx].width.to(self.gaussians.points.device)
+            
+        print(world2view)
+        print(self.images[image_idx].projection_matrix)
+        print(full_proj_transform)
         in_view = in_view_frustum(
             points=self.gaussians.points,
-            view_matrix=self.images[image_idx].world2view,
+            view_matrix=world2view,
         )
         covariance_3d = self.gaussians.get_3d_covariance_matrix()[in_view]
 
@@ -81,23 +149,30 @@ class GaussianScene(nn.Module):
         )
         points_view = (
             points_homogeneous
-            @ self.images[image_idx].world2view.to(points_homogeneous.device)
+            @ world2view.to(points_homogeneous.device)
         )[:, :3]
 
-        points_ndc = points_homogeneous @ self.images[image_idx].full_proj_transform.to(
+        points_ndc = points_homogeneous @ full_proj_transform.to(
             points_homogeneous.device
         )
         points_ndc = points_ndc[:, :3] / points_ndc[:, 3].unsqueeze(1)
         points_xy = points_ndc[:, :2]
         points_xy[:, 0] = ndc2Pix(
-            points_xy[:, 0], self.images[image_idx].width.to(points_xy.device)
+            points_xy[:, 0], width.to(points_xy.device)
         )
         points_xy[:, 1] = ndc2Pix(
-            points_xy[:, 1], self.images[image_idx].height.to(points_xy.device)
+            points_xy[:, 1], height.to(points_xy.device)
         )
 
         covariance_2d = self.get_2d_covariance(
-            image_idx=image_idx, points=points, covariance_3d=covariance_3d
+            image_idx=image_idx, 
+            points=points, 
+            covariance_3d=covariance_3d,
+            world2view=world2view,
+            tan_fovX=tan_fovX,
+            tan_fovY=tan_fovY,
+            focal_x=focal_x,
+            focal_y=focal_y,
         )
 
         inverse_covariance = compute_inverted_covariance(covariance_2d)
@@ -197,33 +272,78 @@ class GaussianScene(nn.Module):
                 )
         return tile
 
-    def render_image(self, image_idx: int, tile_size: int = 16) -> torch.Tensor:
+    def render_image(
+        self, 
+        tile_size: int = 16,
+        image_idx: Optional[int] = None, 
+        world2view: Optional[torch.Tensor] = None,
+        tan_fovX: Optional[torch.Tensor] = None,
+        tan_fovY: Optional[torch.Tensor] = None,
+        focal_x: Optional[torch.Tensor] = None,
+        focal_y: Optional[torch.Tensor] = None,
+        full_proj_transform: Optional[torch.Tensor] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+    ) -> torch.Tensor:
         """For each tile have to check if the point is in the tile"""
-        preprocessed_scene = self.preprocess(image_idx)
-        height = int(self.images[image_idx].height.item())
-        width = int(self.images[image_idx].width.item())
+        preprocessed_scene = self.preprocess(
+            image_idx=image_idx,
+            world2view=world2view,
+            tan_fovX=tan_fovX,
+            tan_fovY=tan_fovY,
+            focal_x=focal_x,
+            focal_y=focal_y,
+            full_proj_transform=full_proj_transform,
+            height=height,
+            width=width,
+        )
+        if image_idx:
+            height = int(self.images[image_idx].height.item())
+            width = int(self.images[image_idx].width.item())
 
         image = torch.zeros((width, height, 3))
 
-        for x_min in tqdm(range(0, width - tile_size, tile_size)):
+        start_time = time.time()
+        total_tile_time = 0
+        total_filter_time = 0
+        total_render_time = 0
+        
+        pbar = tqdm(range(0, width - tile_size, tile_size))
+        total_points_in_tile = 0
+        for x_min in pbar:
+            x_filter_start = time.time()
             x_in_tile = (preprocessed_scene.min_x <= x_min + tile_size) & (
                 preprocessed_scene.max_x >= x_min
             )
             if x_in_tile.sum() == 0:
                 continue
+            x_filter_time = time.time() - x_filter_start
+            total_filter_time += x_filter_time
+                
             for y_min in range(0, height - tile_size, tile_size):
+                
+                y_filter_start = time.time()
                 y_in_tile = (preprocessed_scene.min_y <= y_min + tile_size) & (
                     preprocessed_scene.max_y >= y_min
                 )
                 points_in_tile = x_in_tile & y_in_tile
                 if points_in_tile.sum() == 0:
                     continue
+                y_filter_time = time.time() - y_filter_start
+                total_filter_time += y_filter_time
+                    
+                tile_prep_start = time.time()
                 points_in_tile_mean = preprocessed_scene.points[points_in_tile]
                 colors_in_tile = preprocessed_scene.colors[points_in_tile]
                 opacities_in_tile = preprocessed_scene.sigmoid_opacity[points_in_tile]
                 inverse_covariance_in_tile = preprocessed_scene.inverse_covariance_2d[
                     points_in_tile
                 ]
+                total_points_in_tile += points_in_tile.sum()
+                tile_prep_time = time.time() - tile_prep_start
+                total_tile_time += tile_prep_time
+                
+                render_start = time.time()
                 image[x_min : x_min + tile_size, y_min : y_min + tile_size] = (
                     self.render_tile(
                         x_min=x_min,
@@ -235,6 +355,20 @@ class GaussianScene(nn.Module):
                         tile_size=tile_size,
                     )
                 )
+                render_time = time.time() - render_start
+                total_render_time += render_time
+                pbar.set_postfix(
+                    filter_time=f"{total_filter_time:.2f}s",
+                    tile_time=f"{total_tile_time:.2f}s",
+                    render_time=f"{total_render_time:.2f}s",
+                )
+                
+        total_time = time.time() - start_time
+        print(f"Total time: {total_time:.2f}s")
+        print(f"Filter time: {total_filter_time:.2f}s ({100*total_filter_time/total_time:.1f}%)")
+        print(f"Tile prep time: {total_tile_time:.2f}s ({100*total_tile_time/total_time:.1f}%)")
+        print(f"Render time: {total_render_time:.2f}s ({100*total_render_time/total_time:.1f}%)")
+        print(f"Total points in tiles: {total_points_in_tile}")
         return image
 
     def compile_cuda_ext(
